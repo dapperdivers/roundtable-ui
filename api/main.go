@@ -96,6 +96,7 @@ func main() {
 	api.HandleFunc("/fleet", fleetHandler(namespace)).Methods("GET")
 	api.HandleFunc("/fleet/{knight}", knightHandler(namespace)).Methods("GET")
 	api.HandleFunc("/fleet/{knight}/logs", knightLogsHandler(namespace)).Methods("GET")
+	api.HandleFunc("/fleet/{knight}/session", knightSessionHandler()).Methods("GET")
 
 	// Task endpoints
 	api.HandleFunc("/tasks", taskHistoryHandler()).Methods("GET")
@@ -269,6 +270,34 @@ func knightLogsHandler(namespace string) http.HandlerFunc {
 				break
 			}
 		}
+	}
+}
+
+func knightSessionHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		name := vars["knight"]
+		reqType := r.URL.Query().Get("type")
+		if reqType == "" {
+			reqType = "stats"
+		}
+
+		if nc == nil {
+			http.Error(w, "NATS not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		// Send introspection request via NATS request/reply
+		subject := fmt.Sprintf("fleet-a.introspect.%s", name)
+		payload := fmt.Sprintf(`{"type":"%s"}`, reqType)
+		msg, err := nc.Request(subject, []byte(payload), 5*time.Second)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Knight introspect timeout: %v", err), http.StatusGatewayTimeout)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(msg.Data)
 	}
 }
 

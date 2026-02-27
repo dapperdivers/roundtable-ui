@@ -1,9 +1,13 @@
+import { useState } from 'react'
 import { RefreshCw, Zap, Crown } from 'lucide-react'
 import { useFleet } from '../hooks/useFleet'
+import type { Knight } from '../hooks/useFleet'
 import { KnightCard } from '../components/KnightCard'
+import { KnightDetailDrawer } from '../components/KnightDetailDrawer'
 
 export function FleetPage() {
   const { knights, loading, error, refresh } = useFleet()
+  const [selectedKnight, setSelectedKnight] = useState<Knight | null>(null)
 
   const online = knights.filter((k) => k.status === 'online').length
   const total = knights.length
@@ -79,10 +83,13 @@ export function FleetPage() {
           {knights
             .sort((a, b) => a.name.localeCompare(b.name))
             .map((knight) => (
-              <KnightCard key={knight.name} knight={knight} />
+              <KnightCard key={knight.name} knight={knight} onClick={() => setSelectedKnight(knight)} />
             ))}
         </div>
       )}
+
+      {/* Knight detail drawer */}
+      <KnightDetailDrawer knight={selectedKnight} onClose={() => setSelectedKnight(null)} />
     </div>
   )
 }
