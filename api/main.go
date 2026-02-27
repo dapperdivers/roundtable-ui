@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"unicode"
 	"syscall"
 	"time"
 
@@ -288,7 +289,9 @@ func knightSessionHandler() http.HandlerFunc {
 		}
 
 		// Send introspection request via NATS request/reply
-		subject := fmt.Sprintf("fleet-a.introspect.%s", name)
+		// Knight names in NATS are capitalized (e.g., "Galahad")
+		capitalName := string(unicode.ToUpper(rune(name[0]))) + name[1:]
+		subject := fmt.Sprintf("fleet-a.introspect.%s", capitalName)
 		payload := fmt.Sprintf(`{"type":"%s"}`, reqType)
 		msg, err := nc.Request(subject, []byte(payload), 5*time.Second)
 		if err != nil {
