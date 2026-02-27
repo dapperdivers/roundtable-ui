@@ -24,3 +24,21 @@ export function getKnightConfig(name: string) {
 export function getKnightByDomain(domain: string) {
   return Object.entries(KNIGHT_CONFIG).find(([, c]) => c.domain === domain)
 }
+
+/** Get (x, y) position for a knight on a circle */
+export function getKnightPosition(index: number, total: number, cx: number, cy: number, radius: number) {
+  const angle = (2 * Math.PI * index) / total - Math.PI / 2 // start from top
+  return {
+    x: cx + radius * Math.cos(angle),
+    y: cy + radius * Math.sin(angle),
+  }
+}
+
+/** All knight names in order */
+export const KNIGHT_NAMES = Object.keys(KNIGHT_CONFIG)
+
+/** Map domain -> knight name */
+export function knightNameForDomain(domain: string): string | null {
+  const entry = Object.entries(KNIGHT_CONFIG).find(([, c]) => c.domain === domain)
+  return entry ? entry[0] : null
+}
