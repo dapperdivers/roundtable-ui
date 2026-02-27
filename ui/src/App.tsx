@@ -1,15 +1,15 @@
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { Swords, LayoutDashboard, Send, ScrollText, Activity } from 'lucide-react'
+import { Swords, Shield, Scroll, GitGraph, BookOpen } from 'lucide-react'
 import { FleetPage } from './pages/Fleet'
 import { TasksPage } from './pages/Tasks'
 import { BriefingsPage } from './pages/Briefings'
 import { LivePage } from './pages/Live'
 
 const navItems = [
-  { path: '/', icon: LayoutDashboard, label: 'Fleet' },
-  { path: '/tasks', icon: Send, label: 'Tasks' },
-  { path: '/briefings', icon: ScrollText, label: 'Briefings' },
-  { path: '/live', icon: Activity, label: 'Live' },
+  { path: '/', icon: Shield, label: 'The Round Table' },
+  { path: '/quests', icon: Scroll, label: 'Quests' },
+  { path: '/flow', icon: GitGraph, label: 'Message Flow' },
+  { path: '/chronicles', icon: BookOpen, label: 'Chronicles' },
 ]
 
 export default function App() {
@@ -23,8 +23,8 @@ export default function App() {
           <div className="flex items-center gap-3">
             <Swords className="w-8 h-8 text-roundtable-gold" />
             <div>
-              <h1 className="text-lg font-bold text-roundtable-gold">Round Table</h1>
-              <p className="text-xs text-gray-400">Fleet Dashboard</p>
+              <h1 className="text-lg font-bold text-roundtable-gold">⚔️ The Round Table</h1>
+              <p className="text-xs text-gray-400">Observability & Traceability</p>
             </div>
           </div>
         </div>
@@ -60,9 +60,9 @@ export default function App() {
       <main className="flex-1 overflow-auto p-8">
         <Routes>
           <Route path="/" element={<FleetPage />} />
-          <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/briefings" element={<BriefingsPage />} />
-          <Route path="/live" element={<LivePage />} />
+          <Route path="/quests" element={<TasksPage />} />
+          <Route path="/flow" element={<LivePage />} />
+          <Route path="/chronicles" element={<BriefingsPage />} />
         </Routes>
       </main>
     </div>

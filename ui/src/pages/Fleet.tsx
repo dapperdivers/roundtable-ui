@@ -1,4 +1,4 @@
-import { RefreshCw, Shield, Zap } from 'lucide-react'
+import { RefreshCw, Zap, Crown } from 'lucide-react'
 import { useFleet } from '../hooks/useFleet'
 import { KnightCard } from '../components/KnightCard'
 
@@ -14,11 +14,11 @@ export function FleetPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Shield className="w-8 h-8 text-roundtable-gold" />
-            Fleet Status
+            <Crown className="w-8 h-8 text-roundtable-gold" />
+            The Round Table
           </h1>
           <p className="text-gray-400 mt-1">
-            {online}/{total} knights online
+            {online}/{total} knights seated • observing the realm
           </p>
         </div>
         <button
@@ -69,7 +69,7 @@ export function FleetPage() {
       {loading && (
         <div className="text-center py-20">
           <div className="animate-spin w-8 h-8 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-gray-400">Summoning knights...</p>
+          <p className="text-gray-400">Summoning knights to the table...</p>
         </div>
       )}
 

@@ -152,7 +152,7 @@ func fleetHandler(namespace string) http.HandlerFunc {
 		}
 
 		pods, err := k8sClient.CoreV1().Pods(namespace).List(r.Context(), metav1.ListOptions{
-			LabelSelector: "roundtable.io/knight",
+			LabelSelector: "app.kubernetes.io/name=knight",
 		})
 		if err != nil {
 			http.Error(w, fmt.Sprintf("K8s error: %v", err), http.StatusInternalServerError)
@@ -181,7 +181,7 @@ func fleetHandler(namespace string) http.HandlerFunc {
 			}
 
 			knight := KnightStatus{
-				Name:     pod.Labels["roundtable.io/knight"],
+				Name:     pod.Labels["app.kubernetes.io/instance"],
 				Domain:   pod.Labels["roundtable.io/domain"],
 				Status:   status,
 				Ready:    ready,
@@ -214,7 +214,7 @@ func knightHandler(namespace string) http.HandlerFunc {
 		}
 
 		pods, err := k8sClient.CoreV1().Pods(namespace).List(r.Context(), metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("roundtable.io/knight=%s", name),
+			LabelSelector: fmt.Sprintf("app.kubernetes.io/name=knight,app.kubernetes.io/instance=%s", name),
 		})
 		if err != nil || len(pods.Items) == 0 {
 			http.Error(w, "Knight not found", http.StatusNotFound)
@@ -239,7 +239,7 @@ func knightLogsHandler(namespace string) http.HandlerFunc {
 		}
 
 		pods, err := k8sClient.CoreV1().Pods(namespace).List(r.Context(), metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("roundtable.io/knight=%s", name),
+			LabelSelector: fmt.Sprintf("app.kubernetes.io/name=knight,app.kubernetes.io/instance=%s", name),
 		})
 		if err != nil || len(pods.Items) == 0 {
 			http.Error(w, "Knight not found", http.StatusNotFound)
