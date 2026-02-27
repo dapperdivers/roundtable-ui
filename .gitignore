@@ -1,0 +1,7 @@
+node_modules/
+dist/
+api/static/
+api/roundtable-ui
+*.exe
+.env
+.DS_Store
