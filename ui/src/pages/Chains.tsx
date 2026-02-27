@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, ChevronDown, ChevronRight, Clock } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { RefreshCw, ChevronDown, ChevronRight, Clock, Pause, Play } from 'lucide-react'
 import { getKnightConfig } from '../lib/knights'
 
 interface ChainStep {
@@ -206,6 +206,8 @@ function ChainCard({ chain }: { chain: ChainRun }) {
 export function ChainsPage() {
   const [chains, setChains] = useState<ChainRun[]>([])
   const [loading, setLoading] = useState(true)
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const autoRefreshInitialized = useRef(false)
 
   const fetchChains = useCallback(() => {
     setLoading(true)
@@ -218,15 +220,53 @@ export function ChainsPage() {
 
   useEffect(() => { fetchChains() }, [fetchChains])
 
+  // Auto-enable when any chain is Running, auto-disable when all done
+  useEffect(() => {
+    if (chains.length === 0) return
+    const hasRunning = chains.some(c => c.phase === 'Running' || c.phase === 'StepRunning')
+    if (!autoRefreshInitialized.current) {
+      setAutoRefresh(hasRunning)
+      autoRefreshInitialized.current = true
+    } else if (!hasRunning && autoRefresh) {
+      setAutoRefresh(false)
+    }
+  }, [chains, autoRefresh])
+
+  // Poll interval
+  useEffect(() => {
+    if (!autoRefresh) return
+    const interval = setInterval(fetchChains, 5000)
+    return () => clearInterval(interval)
+  }, [autoRefresh, fetchChains])
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-white">⛓️ Chain Executions</h1>
-        <button onClick={fetchChains}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {autoRefresh && (
+            <span className="flex items-center gap-1.5 text-xs text-blue-400">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              Auto-refreshing every 5s
+            </span>
+          )}
+          <button
+            onClick={() => setAutoRefresh(a => !a)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+              autoRefresh
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                : 'bg-roundtable-steel/50 text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            {autoRefresh ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+            Auto
+          </button>
+          <button onClick={fetchChains}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {chains.length === 0 && !loading && (

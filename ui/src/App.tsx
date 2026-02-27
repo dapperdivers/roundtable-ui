@@ -5,6 +5,16 @@ import { TasksPage } from './pages/Tasks'
 import { BriefingsPage } from './pages/Briefings'
 import { LivePage } from './pages/Live'
 import { ChainsPage } from './pages/Chains'
+import { ToastProvider, useToast } from './components/Toast'
+import { useWebSocket } from './hooks/useWebSocket'
+import { useTaskNotifications } from './hooks/useTaskNotifications'
+
+function NotificationWatcher() {
+  const { events } = useWebSocket()
+  const { addToast } = useToast()
+  useTaskNotifications(events, addToast)
+  return null
+}
 
 const navItems = [
   { path: '/', icon: Shield, label: 'The Round Table' },
@@ -18,7 +28,9 @@ export default function App() {
   const location = useLocation()
 
   return (
+    <ToastProvider>
     <div className="flex h-screen">
+      <NotificationWatcher />
       {/* Sidebar */}
       <nav className="w-64 bg-roundtable-slate border-r border-roundtable-steel flex flex-col">
         <div className="p-6 border-b border-roundtable-steel">
@@ -69,5 +81,6 @@ export default function App() {
         </Routes>
       </main>
     </div>
+    </ToastProvider>
   )
 }

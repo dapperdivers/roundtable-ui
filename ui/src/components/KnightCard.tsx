@@ -2,9 +2,41 @@ import { Shield, Wifi, WifiOff, RotateCw } from 'lucide-react'
 import type { Knight } from '../hooks/useFleet'
 import { getKnightConfig } from '../lib/knights'
 
+interface KnightActivity {
+  recent: number
+  lastActive: string | null
+  busy: boolean
+  sparkline?: number[]
+}
+
 interface KnightCardProps {
   knight: Knight
   onClick?: () => void
+  activity?: KnightActivity
+}
+
+function formatRelativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const sec = Math.floor(diff / 1000)
+  if (sec < 60) return `${sec}s ago`
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  return `${hr}h ago`
+}
+
+function MiniSparkline({ bars, active }: { bars: number[]; active: boolean }) {
+  return (
+    <div className="flex items-end gap-0.5 h-4">
+      {bars.map((v, i) => (
+        <div
+          key={i}
+          className={`w-1.5 rounded-sm transition-all ${active ? 'bg-green-500/70' : 'bg-gray-600/50'}`}
+          style={{ height: `${Math.max(v * 100, 10)}%` }}
+        />
+      ))}
+    </div>
+  )
 }
 
 const statusColors = {
@@ -14,7 +46,7 @@ const statusColors = {
   busy: 'bg-blue-500',
 }
 
-export function KnightCard({ knight, onClick }: KnightCardProps) {
+export function KnightCard({ knight, onClick, activity }: KnightCardProps) {
   const config = getKnightConfig(knight.name)
 
   return (
@@ -59,7 +91,28 @@ export function KnightCard({ knight, onClick }: KnightCardProps) {
         </div>
       </div>
 
-      <div className="mt-3 pt-3 border-t border-roundtable-steel/50 flex items-center justify-between">
+      {/* Activity indicator */}
+      {activity && (
+        <div className="mt-3 pt-3 border-t border-roundtable-steel/50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {activity.busy ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-xs text-amber-400">Working...</span>
+              </>
+            ) : activity.recent > 0 ? (
+              <span className="text-xs text-gray-400">{activity.recent} tasks recently</span>
+            ) : activity.lastActive ? (
+              <span className="text-xs text-gray-500">Last active {formatRelativeTime(activity.lastActive)}</span>
+            ) : (
+              <span className="text-xs text-gray-600">Idle</span>
+            )}
+          </div>
+          <MiniSparkline bars={activity.sparkline || [0, 0, 0, 0, 0]} active={activity.recent > 0 || activity.busy} />
+        </div>
+      )}
+
+      <div className={`${activity ? '' : 'mt-3 pt-3 border-t border-roundtable-steel/50'} ${activity ? 'mt-2' : ''} flex items-center justify-between`}>
         <p className="text-xs text-gray-500 truncate font-mono">{knight.age} uptime</p>
         <span className="text-xs text-gray-600 group-hover:text-roundtable-gold/60 transition-colors">inspect →</span>
       </div>

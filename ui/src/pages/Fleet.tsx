@@ -1,13 +1,83 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { RefreshCw, Zap, Crown } from 'lucide-react'
 import { useFleet } from '../hooks/useFleet'
 import type { Knight } from '../hooks/useFleet'
 import { KnightCard } from '../components/KnightCard'
 import { KnightDetailDrawer } from '../components/KnightDetailDrawer'
+import { useWebSocket } from '../hooks/useWebSocket'
+import { knightNameForDomain } from '../lib/knights'
 
 export function FleetPage() {
   const { knights, loading, error, refresh } = useFleet()
   const [selectedKnight, setSelectedKnight] = useState<Knight | null>(null)
+  const { events } = useWebSocket()
+
+  const knightActivity = useMemo(() => {
+    const now = Date.now()
+    const windowMs = 30 * 60 * 1000 // 30 min
+    const intervalMs = windowMs / 5
+    const activity: Record<string, { recent: number; lastActive: string | null; busy: boolean; sparkline: number[] }> = {}
+
+    // Track pending tasks (task sent but no result yet) per knight
+    const pendingTasks = new Set<string>()
+    const resultsSeen = new Set<string>()
+
+    for (const event of events) {
+      const parts = event.subject.split('.')
+      const domain = parts[1] || ''
+      const name = knightNameForDomain(domain)
+      if (!name) continue
+
+      const ts = new Date(event.timestamp).getTime()
+      if (now - ts > windowMs) continue
+
+      if (!activity[name]) {
+        activity[name] = { recent: 0, lastActive: null, busy: false, sparkline: [0, 0, 0, 0, 0] }
+      }
+
+      if (event.type === 'result') {
+        activity[name].recent++
+        resultsSeen.add(`${name}:${event.timestamp}`)
+        if (!activity[name].lastActive || event.timestamp > activity[name].lastActive!) {
+          activity[name].lastActive = event.timestamp
+        }
+        // Sparkline bucket
+        const bucket = Math.min(4, Math.floor((now - ts) / intervalMs))
+        activity[name].sparkline[4 - bucket]++
+      }
+
+      if (event.type === 'task') {
+        pendingTasks.add(name)
+      }
+    }
+
+    // Normalize sparkline values to 0-1
+    for (const a of Object.values(activity)) {
+      const max = Math.max(1, ...a.sparkline)
+      a.sparkline = a.sparkline.map(v => v / max)
+    }
+
+    // Mark busy: has task but fewer results than tasks in recent window
+    for (const event of events) {
+      const parts = event.subject.split('.')
+      const domain = parts[1] || ''
+      const name = knightNameForDomain(domain)
+      if (!name || event.type !== 'task') continue
+      const ts = new Date(event.timestamp).getTime()
+      if (now - ts > 60000) continue // only last 60s for busy detection
+      if (activity[name]) {
+        // Check if there's a result after this task
+        const hasResult = events.some(e =>
+          e.type === 'result' &&
+          knightNameForDomain(e.subject.split('.')[1] || '') === name &&
+          new Date(e.timestamp).getTime() > ts
+        )
+        if (!hasResult) activity[name].busy = true
+      }
+    }
+
+    return activity
+  }, [events])
 
   const online = knights.filter((k) => k.status === 'online').length
   const total = knights.length
@@ -83,7 +153,7 @@ export function FleetPage() {
           {knights
             .sort((a, b) => a.name.localeCompare(b.name))
             .map((knight) => (
-              <KnightCard key={knight.name} knight={knight} onClick={() => setSelectedKnight(knight)} />
+              <KnightCard key={knight.name} knight={knight} onClick={() => setSelectedKnight(knight)} activity={knightActivity[knight.name]} />
             ))}
         </div>
       )}
