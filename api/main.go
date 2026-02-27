@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -111,8 +113,8 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}).Methods("GET")
 
-	// Serve static UI files
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./static")))
+	// Serve static UI files with SPA fallback
+	r.PathPrefix("/").HandlerFunc(spaHandler("./static"))
 
 	// CORS
 	handler := cors.New(cors.Options{
@@ -468,6 +470,21 @@ func wsHandler() http.HandlerFunc {
 				nc.Publish(subject, payload)
 			}
 		}
+	}
+}
+
+func spaHandler(staticDir string) http.HandlerFunc {
+	fs := http.Dir(staticDir)
+	fileServer := http.FileServer(fs)
+	return func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		// If the path has an extension (asset file), serve it directly
+		if strings.Contains(filepath.Base(p), ".") {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		// For all other paths, serve index.html (SPA routing)
+		http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
 	}
 }
 
