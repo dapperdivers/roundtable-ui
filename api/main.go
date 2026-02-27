@@ -307,7 +307,7 @@ func taskHistoryHandler() http.HandlerFunc {
 					Type:      "result",
 					Subject:   msg.Subject(),
 					Data:      msg.Data(),
-					Timestamp: msg.Headers().Get("Nats-Time-Stamp") != "",
+					Timestamp: time.Now(),
 				})
 			}
 		}
