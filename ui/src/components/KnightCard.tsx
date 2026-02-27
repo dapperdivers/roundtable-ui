@@ -59,8 +59,9 @@ export function KnightCard({ knight, onClick }: KnightCardProps) {
         </div>
       </div>
 
-      <div className="mt-3 pt-3 border-t border-roundtable-steel/50">
+      <div className="mt-3 pt-3 border-t border-roundtable-steel/50 flex items-center justify-between">
         <p className="text-xs text-gray-500 truncate font-mono">{knight.age} uptime</p>
+        <span className="text-xs text-gray-600 group-hover:text-roundtable-gold/60 transition-colors">inspect →</span>
       </div>
     </div>
   )

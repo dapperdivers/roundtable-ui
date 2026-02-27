@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { X, Activity, Cpu, DollarSign, MessageSquare, Wrench, Clock, ChevronRight } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { X, Activity, Cpu, DollarSign, MessageSquare, Wrench, Clock, ChevronRight, RefreshCw } from 'lucide-react'
 import { getKnightConfig } from '../lib/knights'
 import { useKnightSession } from '../hooks/useKnightSession'
 import type { Knight } from '../hooks/useFleet'
@@ -39,13 +39,20 @@ const entryTypeColors: Record<string, string> = {
 
 export function KnightDetailDrawer({ knight, onClose }: Props) {
   const { stats, recent, loading, error, fetchStats, fetchRecent } = useKnightSession()
+  const [recentLoading, setRecentLoading] = useState(false)
+
+  const refreshAll = async (knightName: string) => {
+    fetchStats(knightName)
+    setRecentLoading(true)
+    await fetchRecent(knightName, 30)
+    setRecentLoading(false)
+  }
 
   useEffect(() => {
     if (knight) {
-      fetchStats(knight.name)
-      fetchRecent(knight.name, 30)
+      refreshAll(knight.name)
     }
-  }, [knight, fetchStats, fetchRecent])
+  }, [knight])
 
   if (!knight) return null
 
@@ -67,9 +74,14 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
               <p className={`text-sm ${config.color}`}>{config.title} Knight</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white p-1">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => knight && refreshAll(knight.name)} className="text-gray-400 hover:text-roundtable-gold p-1 transition-colors" title="Refresh">
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-white p-1">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         <div className="p-4 space-y-6">
@@ -159,12 +171,21 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
           )}
 
           {/* Recent Activity */}
-          {recent.length > 0 && (
+          {(recent.length > 0 || recentLoading || stats?.session) && (
             <div>
               <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
                 <Clock className="w-4 h-4" />
-                Recent Activity ({recent.length} entries)
+                Recent Activity {recent.length > 0 && `(${recent.length} entries)`}
               </h3>
+              {recentLoading && (
+                <div className="text-center py-4">
+                  <div className="animate-spin w-5 h-5 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-2" />
+                  <p className="text-gray-500 text-xs">Loading activity...</p>
+                </div>
+              )}
+              {!recentLoading && recent.length === 0 && (
+                <p className="text-gray-500 text-sm text-center py-4">Send a task to see activity here</p>
+              )}
               <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
                 {recent.map((entry) => (
                   <div

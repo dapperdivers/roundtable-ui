@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { GitGraph, Wifi, WifiOff, Filter } from 'lucide-react'
 import { useWebSocket, type NatsEvent } from '../hooks/useWebSocket'
 import { useFleet } from '../hooks/useFleet'
+import type { Knight } from '../hooks/useFleet'
 import { getKnightConfig, KNIGHT_CONFIG, knightNameForDomain } from '../lib/knights'
 import { RoundTableGraph } from '../components/RoundTableGraph'
+import { KnightDetailDrawer } from '../components/KnightDetailDrawer'
 
 function parseSubject(subject: string) {
   const parts = subject.split('.')
@@ -21,6 +23,29 @@ export function LivePage() {
   const [filterKnight, setFilterKnight] = useState<string>('')
   const [filterType, setFilterType] = useState<string>('')
   const [filterDomain, setFilterDomain] = useState<string>('')
+  const [selectedKnight, setSelectedKnight] = useState<Knight | null>(null)
+
+  const handleKnightClick = useCallback((knightName: string) => {
+    const fleet = fleetKnights.find(k => k.name === knightName)
+    if (fleet) {
+      setSelectedKnight(fleet)
+    } else {
+      // Build a minimal Knight object for knights not in fleet response
+      const cfg = getKnightConfig(knightName)
+      setSelectedKnight({
+        name: knightName,
+        domain: cfg.domain,
+        status: 'offline',
+        ready: false,
+        restarts: 0,
+        age: '—',
+        image: '',
+        skills: 0,
+        nixTools: 0,
+        labels: {},
+      })
+    }
+  }, [fleetKnights])
 
   const knightNames = Object.keys(KNIGHT_CONFIG)
   const domains = [...new Set(Object.values(KNIGHT_CONFIG).map(c => c.domain))]
@@ -93,7 +118,7 @@ export function LivePage() {
       </div>
 
       {/* Round Table Graph */}
-      <RoundTableGraph events={filteredEvents} connected={connected} knightStatuses={knightStatuses} />
+      <RoundTableGraph events={filteredEvents} connected={connected} knightStatuses={knightStatuses} onKnightClick={handleKnightClick} />
 
       {/* Recent messages log */}
       <div className="mt-4 bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
@@ -106,6 +131,9 @@ export function LivePage() {
           </div>
         )}
       </div>
+
+      {/* Knight detail drawer */}
+      <KnightDetailDrawer knight={selectedKnight} onClose={() => setSelectedKnight(null)} />
     </div>
   )
 }

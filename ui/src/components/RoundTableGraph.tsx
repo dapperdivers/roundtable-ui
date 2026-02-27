@@ -56,9 +56,10 @@ interface Props {
   events: NatsEvent[]
   connected: boolean
   knightStatuses?: Record<string, string> // name -> 'online'|'offline'
+  onKnightClick?: (knightName: string) => void
 }
 
-export function RoundTableGraph({ events, connected, knightStatuses = {} }: Props) {
+export function RoundTableGraph({ events, connected, knightStatuses = {}, onKnightClick }: Props) {
   const [particles, setParticles] = useState<Particle[]>([])
   const [pulsingKnights, setPulsingKnights] = useState<Set<string>>(new Set())
   const idRef = useRef(0)
@@ -147,7 +148,7 @@ export function RoundTableGraph({ events, connected, knightStatuses = {} }: Prop
         const isOnline = knightStatuses[name] === 'online'
 
         return (
-          <g key={name}>
+          <g key={name} onClick={() => onKnightClick?.(name)} style={{ cursor: onKnightClick ? 'pointer' : 'default' }} className="knight-node">
             {/* Pulse ring */}
             {isPulsing && (
               <circle cx={pos.x} cy={pos.y} r={NODE_R + 8} fill="none" stroke={col} strokeWidth={2} opacity={0.6} filter="url(#pulse-glow)">
@@ -155,8 +156,10 @@ export function RoundTableGraph({ events, connected, knightStatuses = {} }: Prop
                 <animate attributeName="opacity" from="0.6" to="0" dur="0.8s" fill="freeze" />
               </circle>
             )}
+            {/* Hover hit area */}
+            <circle cx={pos.x} cy={pos.y} r={NODE_R + 6} fill="transparent" />
             {/* Node circle */}
-            <circle cx={pos.x} cy={pos.y} r={NODE_R} fill="#1e293b" stroke={col} strokeWidth={2} />
+            <circle cx={pos.x} cy={pos.y} r={NODE_R} fill="#1e293b" stroke={col} strokeWidth={2} className="transition-all duration-150 hover:brightness-125" />
             {/* Emoji */}
             <text x={pos.x} y={pos.y + 2} textAnchor="middle" fontSize={18} dominantBaseline="central">{cfg.emoji}</text>
             {/* Name */}
