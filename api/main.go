@@ -9,10 +9,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
-	"unicode"
+	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -25,12 +27,30 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// validKnightName matches alphanumeric knight names (prevents NATS injection)
+var validKnightName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]{0,62}$`)
+
 var (
-	nc       *nats.Conn
-	js       jetstream.JetStream
+	nc        *nats.Conn
+	js        jetstream.JetStream
 	k8sClient *kubernetes.Clientset
-	upgrader = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
+	upgrader  = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true // non-browser clients
+			}
+			allowed := envOr("ALLOWED_ORIGINS", "")
+			if allowed == "" {
+				return true // no restriction configured (local install)
+			}
+			for _, o := range strings.Split(allowed, ",") {
+				if strings.TrimSpace(o) == origin {
+					return true
+				}
+			}
+			return false
+		},
 	}
 )
 
@@ -118,12 +138,16 @@ func main() {
 	// Serve static UI files with SPA fallback
 	r.PathPrefix("/").HandlerFunc(spaHandler("./static"))
 
-	// CORS
+	// CORS — local install: allow same-origin; configurable via ALLOWED_ORIGINS
+	allowedOrigins := []string{}
+	if origins := envOr("ALLOWED_ORIGINS", ""); origins != "" {
+		allowedOrigins = strings.Split(origins, ",")
+	}
 	handler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"*"},
-		AllowCredentials: true,
+		AllowedHeaders:   []string{"Content-Type"},
+		AllowCredentials: false,
 	}).Handler(r)
 
 	srv := &http.Server{
@@ -159,14 +183,18 @@ func fleetHandler(namespace string) http.HandlerFunc {
 			LabelSelector: "app.kubernetes.io/name=knight",
 		})
 		if err != nil {
-			http.Error(w, fmt.Sprintf("K8s error: %v", err), http.StatusInternalServerError)
+			log.Printf("K8s fleet list error: %v", err)
+			http.Error(w, "Failed to list fleet", http.StatusInternalServerError)
 			return
 		}
 
 		knights := []KnightStatus{}
 		for _, pod := range pods.Items {
-			// Skip CronJob pods
+			// Skip CronJob pods and pods with no containers
 			if _, ok := pod.Labels["job-name"]; ok {
+				continue
+			}
+			if len(pod.Spec.Containers) == 0 {
 				continue
 			}
 
@@ -250,12 +278,17 @@ func knightLogsHandler(namespace string) http.HandlerFunc {
 			return
 		}
 
+		// Add timeout to prevent indefinite streaming
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
 		req := k8sClient.CoreV1().Pods(namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{
 			TailLines: &lines,
 		})
-		stream, err := req.Stream(r.Context())
+		stream, err := req.Stream(ctx)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Log stream error: %v", err), http.StatusInternalServerError)
+			log.Printf("Log stream error for %s: %v", name, err)
+			http.Error(w, "Failed to read logs", http.StatusInternalServerError)
 			return
 		}
 		defer stream.Close()
@@ -288,14 +321,20 @@ func knightSessionHandler() http.HandlerFunc {
 			return
 		}
 
-		// Send introspection request via NATS request/reply
+		// Validate knight name (prevents NATS subject injection)
+		if !validKnightName.MatchString(name) {
+			http.Error(w, "Invalid knight name", http.StatusBadRequest)
+			return
+		}
+
 		// Knight names in NATS are capitalized (e.g., "Galahad")
-		capitalName := string(unicode.ToUpper(rune(name[0]))) + name[1:]
+		capitalName := capitalizeKnight(name)
 		subject := fmt.Sprintf("fleet-a.introspect.%s", capitalName)
 		payload := fmt.Sprintf(`{"type":"%s"}`, reqType)
 		msg, err := nc.Request(subject, []byte(payload), 5*time.Second)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Knight introspect timeout: %v", err), http.StatusGatewayTimeout)
+			log.Printf("Knight introspect timeout for %s: %v", name, err)
+			http.Error(w, "Knight introspection timeout", http.StatusGatewayTimeout)
 			return
 		}
 
@@ -310,7 +349,8 @@ func taskHistoryHandler() http.HandlerFunc {
 		ctx := r.Context()
 		stream, err := js.Stream(ctx, "fleet_a_results")
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Stream error: %v", err), http.StatusInternalServerError)
+			log.Printf("JetStream error: %v", err)
+			http.Error(w, "Task history unavailable", http.StatusInternalServerError)
 			return
 		}
 
@@ -362,8 +402,18 @@ func taskDispatchHandler() http.HandlerFunc {
 			Task    string `json:"task"`
 			Timeout int    `json:"timeout_ms,omitempty"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
 			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		// Validate inputs to prevent NATS subject injection
+		if !validKnightName.MatchString(req.Knight) || !validKnightName.MatchString(req.Domain) {
+			http.Error(w, "Invalid knight or domain name", http.StatusBadRequest)
+			return
+		}
+		if len(req.Task) == 0 || len(req.Task) > 10000 {
+			http.Error(w, "Task must be 1-10000 characters", http.StatusBadRequest)
 			return
 		}
 
@@ -383,7 +433,8 @@ func taskDispatchHandler() http.HandlerFunc {
 		})
 
 		if err := nc.Publish(subject, payload); err != nil {
-			http.Error(w, fmt.Sprintf("NATS publish error: %v", err), http.StatusInternalServerError)
+			log.Printf("NATS publish error: %v", err)
+			http.Error(w, "Failed to dispatch task", http.StatusInternalServerError)
 			return
 		}
 
@@ -418,10 +469,22 @@ func briefingListHandler(vaultPath string) http.HandlerFunc {
 }
 
 func briefingHandler(vaultPath string) http.HandlerFunc {
+	allowedDir := filepath.Clean(fmt.Sprintf("%s/Briefings/Daily", vaultPath))
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		date := vars["date"]
-		path := fmt.Sprintf("%s/Briefings/Daily/%s.md", vaultPath, date)
+
+		// Sanitize: only allow YYYY-MM-DD format to prevent path traversal
+		if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).MatchString(date) {
+			http.Error(w, "Invalid date format", http.StatusBadRequest)
+			return
+		}
+
+		path := filepath.Clean(fmt.Sprintf("%s/%s.md", allowedDir, date))
+		if !strings.HasPrefix(path, allowedDir) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
 
 		content, err := os.ReadFile(path)
 		if err != nil {
@@ -441,10 +504,26 @@ func wsHandler() http.HandlerFunc {
 			log.Printf("WebSocket upgrade error: %v", err)
 			return
 		}
-		defer conn.Close()
+
+		// Write mutex — gorilla websocket is not concurrent-write safe
+		var writeMu sync.Mutex
+		safeWrite := func(data []byte) {
+			writeMu.Lock()
+			defer writeMu.Unlock()
+			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			conn.WriteMessage(websocket.TextMessage, data)
+		}
+
+		// Done channel to clean up NATS subscriptions when WS closes
+		done := make(chan struct{})
 
 		// Subscribe to all task and result events
 		taskSub, err := nc.Subscribe("fleet-a.tasks.>", func(msg *nats.Msg) {
+			select {
+			case <-done:
+				return
+			default:
+			}
 			event := TaskEvent{
 				Type:      "task",
 				Subject:   msg.Subject,
@@ -452,15 +531,20 @@ func wsHandler() http.HandlerFunc {
 				Timestamp: time.Now(),
 			}
 			data, _ := json.Marshal(event)
-			conn.WriteMessage(websocket.TextMessage, data)
+			safeWrite(data)
 		})
 		if err != nil {
 			log.Printf("NATS task sub error: %v", err)
+			conn.Close()
 			return
 		}
-		defer taskSub.Unsubscribe()
 
 		resultSub, err := nc.Subscribe("fleet-a.results.>", func(msg *nats.Msg) {
+			select {
+			case <-done:
+				return
+			default:
+			}
 			event := TaskEvent{
 				Type:      "result",
 				Subject:   msg.Subject,
@@ -468,20 +552,56 @@ func wsHandler() http.HandlerFunc {
 				Timestamp: time.Now(),
 			}
 			data, _ := json.Marshal(event)
-			conn.WriteMessage(websocket.TextMessage, data)
+			safeWrite(data)
 		})
 		if err != nil {
 			log.Printf("NATS result sub error: %v", err)
+			taskSub.Unsubscribe()
+			conn.Close()
 			return
 		}
-		defer resultSub.Unsubscribe()
+
+		// Cleanup on exit
+		defer func() {
+			close(done)
+			taskSub.Unsubscribe()
+			resultSub.Unsubscribe()
+			conn.Close()
+		}()
 
 		// Keep connection alive, read client messages (for dispatch)
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		conn.SetPongHandler(func(string) error {
+			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			return nil
+		})
+
+		// Ping ticker to detect dead connections
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				case <-ticker.C:
+					writeMu.Lock()
+					conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+					err := conn.WriteMessage(websocket.PingMessage, nil)
+					writeMu.Unlock()
+					if err != nil {
+						return
+					}
+				}
+			}
+		}()
+
 		for {
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
 				break
 			}
+			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 			// Client can dispatch tasks via WebSocket too
 			var cmd struct {
@@ -491,6 +611,13 @@ func wsHandler() http.HandlerFunc {
 				Task   string `json:"task"`
 			}
 			if json.Unmarshal(msg, &cmd) == nil && cmd.Action == "dispatch" {
+				// Validate inputs
+				if !validKnightName.MatchString(cmd.Knight) || !validKnightName.MatchString(cmd.Domain) {
+					continue
+				}
+				if len(cmd.Task) == 0 || len(cmd.Task) > 10000 {
+					continue
+				}
 				taskID := fmt.Sprintf("%s-ws-%d", cmd.Knight, time.Now().UnixMilli())
 				subject := fmt.Sprintf("fleet-a.tasks.%s.%s", cmd.Domain, taskID)
 				payload, _ := json.Marshal(map[string]interface{}{
@@ -518,6 +645,14 @@ func spaHandler(staticDir string) http.HandlerFunc {
 		// For all other paths, serve index.html (SPA routing)
 		http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
 	}
+}
+
+// capitalizeKnight safely capitalizes a knight name for NATS subjects
+func capitalizeKnight(name string) string {
+	if len(name) == 0 {
+		return name
+	}
+	return string(unicode.ToUpper(rune(name[0]))) + name[1:]
 }
 
 func envOr(key, def string) string {
