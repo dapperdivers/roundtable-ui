@@ -38,7 +38,10 @@ export function getKnightPosition(index: number, total: number, cx: number, cy: 
 export const KNIGHT_NAMES = Object.keys(KNIGHT_CONFIG)
 
 /** Map domain -> knight name */
-export function knightNameForDomain(domain: string): string | null {
-  const entry = Object.entries(KNIGHT_CONFIG).find(([, c]) => c.domain === domain)
+export function knightNameForDomain(domainOrName: string): string | null {
+  // Direct knight name match first
+  if (KNIGHT_CONFIG[domainOrName]) return domainOrName
+  // Then try domain lookup
+  const entry = Object.entries(KNIGHT_CONFIG).find(([, c]) => c.domain === domainOrName)
   return entry ? entry[0] : null
 }
