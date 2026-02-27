@@ -70,6 +70,7 @@ export function LivePage() {
     })
   }, [events, filterKnight, filterType, filterDomain])
 
+  const [expandedId, setExpandedId] = useState<number | null>(null)
   const recentEvents = filteredEvents.slice(0, 10)
 
   return (
@@ -126,8 +127,11 @@ export function LivePage() {
         {recentEvents.length === 0 ? (
           <p className="text-sm text-gray-600 text-center py-4">Waiting for messages…</p>
         ) : (
-          <div className="space-y-1.5">
-            {recentEvents.map((event, i) => <CompactEvent key={i} event={event} />)}
+          <div className="space-y-2">
+            {recentEvents.map((event, i) => (
+              <EventCard key={i} event={event} index={i}
+                expanded={expandedId === i} onToggle={() => setExpandedId(expandedId === i ? null : i)} />
+            ))}
           </div>
         )}
       </div>
@@ -138,23 +142,63 @@ export function LivePage() {
   )
 }
 
-function CompactEvent({ event }: { event: NatsEvent }) {
+function EventCard({ event, index, expanded, onToggle }: {
+  event: NatsEvent; index: number; expanded: boolean; onToggle: () => void
+}) {
   const parsed = parseSubject(event.subject)
   const knight = knightNameForDomain(parsed.domain)
   const cfg = knight ? getKnightConfig(knight) : null
   const data = parseEventData(event.data)
   const isTask = event.type === 'task'
   const taskText = (data.task as string) || (data.summary as string) || ''
+  const success = data.success as boolean | undefined
+  const cost = data.cost as number | undefined
+  const duration = data.duration as number | undefined
+  const toolCalls = data.toolCalls as number | undefined
 
   return (
-    <div className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded ${isTask ? 'bg-blue-500/5' : 'bg-green-500/5'}`}>
-      <span className={isTask ? 'text-blue-400' : 'text-green-400'}>{isTask ? '📤' : '📥'}</span>
-      <span className={`font-medium ${isTask ? 'text-blue-400' : 'text-green-400'}`}>
-        {isTask ? 'TASK' : 'RESULT'}
-      </span>
-      {cfg && <span className={cfg.color}>{cfg.emoji} {knight}</span>}
-      <span className="text-gray-500 truncate max-w-xs">{taskText}</span>
-      <span className="text-gray-600 ml-auto flex-shrink-0">{new Date(event.timestamp).toLocaleTimeString()}</span>
+    <div
+      className={`rounded-lg border transition-colors cursor-pointer ${
+        isTask ? 'bg-blue-500/5 border-blue-500/10' : 'bg-green-500/5 border-green-500/10'
+      } ${expanded ? 'ring-1 ring-roundtable-gold/30' : ''}`}
+      onClick={onToggle}
+    >
+      <div className="flex items-center gap-2 text-xs px-3 py-2">
+        <span className={isTask ? 'text-blue-400' : 'text-green-400'}>{isTask ? '📤' : '📥'}</span>
+        <span className={`font-medium ${isTask ? 'text-blue-400' : 'text-green-400'}`}>
+          {isTask ? 'TASK' : 'RESULT'}
+        </span>
+        {cfg && <span className={cfg.color}>{cfg.emoji} {knight}</span>}
+        {!isTask && success !== undefined && (
+          <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+            success ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+          }`}>
+            {success ? 'OK' : 'FAIL'}
+          </span>
+        )}
+        {!isTask && cost !== undefined && (
+          <span className="text-gray-500">${cost.toFixed(4)}</span>
+        )}
+        {!isTask && duration !== undefined && (
+          <span className="text-gray-500">{duration}s</span>
+        )}
+        {!isTask && toolCalls !== undefined && (
+          <span className="text-gray-500">🔧{toolCalls}</span>
+        )}
+        <span className="text-gray-600 ml-auto flex-shrink-0">
+          {new Date(event.timestamp).toLocaleTimeString()}
+        </span>
+      </div>
+      <div className="px-3 pb-2">
+        <p className={`text-xs text-gray-400 ${expanded ? '' : 'line-clamp-2'}`}>{taskText}</p>
+      </div>
+      {expanded && (
+        <div className="px-3 pb-3 border-t border-roundtable-steel/30 mt-1 pt-2">
+          <pre className="text-[10px] text-gray-500 overflow-x-auto max-h-48 whitespace-pre-wrap">
+            {JSON.stringify(data, null, 2)}
+          </pre>
+        </div>
+      )}
     </div>
   )
 }

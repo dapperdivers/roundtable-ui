@@ -1,15 +1,17 @@
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { Swords, Shield, Scroll, GitGraph, BookOpen } from 'lucide-react'
+import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2 } from 'lucide-react'
 import { FleetPage } from './pages/Fleet'
 import { TasksPage } from './pages/Tasks'
 import { BriefingsPage } from './pages/Briefings'
 import { LivePage } from './pages/Live'
+import { ChainsPage } from './pages/Chains'
 
 const navItems = [
   { path: '/', icon: Shield, label: 'The Round Table' },
   { path: '/quests', icon: Scroll, label: 'Quests' },
   { path: '/flow', icon: GitGraph, label: 'Message Flow' },
   { path: '/chronicles', icon: BookOpen, label: 'Chronicles' },
+  { path: '/chains', icon: Link2, label: 'Chains' },
 ]
 
 export default function App() {
@@ -63,6 +65,7 @@ export default function App() {
           <Route path="/quests" element={<TasksPage />} />
           <Route path="/flow" element={<LivePage />} />
           <Route path="/chronicles" element={<BriefingsPage />} />
+          <Route path="/chains" element={<ChainsPage />} />
         </Routes>
       </main>
     </div>

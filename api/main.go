@@ -23,6 +23,8 @@ import (
 	"github.com/rs/cors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -34,6 +36,7 @@ var (
 	nc        *nats.Conn
 	js        jetstream.JetStream
 	k8sClient *kubernetes.Clientset
+	dynClient dynamic.Interface
 	upgrader  = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
@@ -107,6 +110,10 @@ func main() {
 		} else {
 			log.Println("Kubernetes client connected")
 		}
+		dynClient, err = dynamic.NewForConfig(config)
+		if err != nil {
+			log.Printf("WARNING: Dynamic K8s client creation failed: %v", err)
+		}
 	}
 
 	// Router
@@ -122,6 +129,10 @@ func main() {
 	// Task endpoints
 	api.HandleFunc("/tasks", taskHistoryHandler()).Methods("GET")
 	api.HandleFunc("/tasks/dispatch", taskDispatchHandler()).Methods("POST")
+
+	// Chain endpoints
+	api.HandleFunc("/chains", chainsHandler(namespace)).Methods("GET")
+	api.HandleFunc("/chains/{name}", chainDetailHandler(namespace)).Methods("GET")
 
 	// Briefing endpoints
 	api.HandleFunc("/briefings", briefingListHandler(vaultPath)).Methods("GET")
@@ -630,6 +641,244 @@ func wsHandler() http.HandlerFunc {
 			}
 		}
 	}
+}
+
+var chainGVR = schema.GroupVersionResource{
+	Group:    "ai.roundtable.io",
+	Version:  "v1alpha1",
+	Resource: "chains",
+}
+
+// ChainSummary is the API response for chain list
+type ChainSummary struct {
+	Name           string        `json:"name"`
+	Namespace      string        `json:"namespace"`
+	Phase          string        `json:"phase"`
+	CurrentStep    string        `json:"currentStep"`
+	StartTime      *string       `json:"startTime"`
+	CompletionTime *string       `json:"completionTime"`
+	Steps          []StepSummary `json:"steps"`
+	Schedule       string        `json:"schedule,omitempty"`
+}
+
+type StepSummary struct {
+	Name           string   `json:"name"`
+	Knight         string   `json:"knight"`
+	Domain         string   `json:"domain"`
+	Phase          string   `json:"phase"`
+	StartTime      *string  `json:"startTime"`
+	CompletionTime *string  `json:"completionTime"`
+	Result         *string  `json:"result"`
+	DependsOn      []string `json:"dependsOn"`
+	RetryCount     int      `json:"retryCount"`
+}
+
+func chainsHandler(namespace string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dynClient == nil {
+			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		list, err := dynClient.Resource(chainGVR).Namespace(namespace).List(r.Context(), metav1.ListOptions{})
+		if err != nil {
+			log.Printf("Chain list error: %v", err)
+			http.Error(w, "Failed to list chains", http.StatusInternalServerError)
+			return
+		}
+
+		chains := []ChainSummary{}
+		for _, item := range list.Items {
+			chains = append(chains, parseChainResource(item.Object))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(chains)
+	}
+}
+
+func chainDetailHandler(namespace string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dynClient == nil {
+			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		vars := mux.Vars(r)
+		name := vars["name"]
+		if !validKnightName.MatchString(name) {
+			http.Error(w, "Invalid chain name", http.StatusBadRequest)
+			return
+		}
+
+		obj, err := dynClient.Resource(chainGVR).Namespace(namespace).Get(r.Context(), name, metav1.GetOptions{})
+		if err != nil {
+			http.Error(w, "Chain not found", http.StatusNotFound)
+			return
+		}
+
+		chain := parseChainResource(obj.Object)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(chain)
+	}
+}
+
+func parseChainResource(obj map[string]interface{}) ChainSummary {
+	spec := getNestedMap(obj, "spec")
+	status := getNestedMap(obj, "status")
+	metadata := getNestedMap(obj, "metadata")
+
+	chain := ChainSummary{
+		Name:      getStr(metadata, "name"),
+		Namespace: getStr(metadata, "namespace"),
+		Phase:     getStr(status, "phase"),
+	}
+
+	// Schedule from spec
+	if sched := getNestedMap(spec, "schedule"); sched != nil {
+		chain.Schedule = getStr(sched, "cron")
+	}
+
+	// Timing
+	if t := getStr(status, "startTime"); t != "" {
+		chain.StartTime = &t
+	}
+	if t := getStr(status, "completionTime"); t != "" {
+		chain.CompletionTime = &t
+	}
+
+	// Current step
+	chain.CurrentStep = getStr(status, "currentStep")
+
+	// Parse spec steps for structure (dependsOn, knight, domain)
+	specSteps := getSlice(spec, "steps")
+	specStepMap := map[string]map[string]interface{}{}
+	for _, s := range specSteps {
+		if sm, ok := s.(map[string]interface{}); ok {
+			specStepMap[getStr(sm, "name")] = sm
+		}
+	}
+
+	// Parse status steps
+	statusSteps := getSlice(status, "steps")
+	for _, s := range statusSteps {
+		sm, ok := s.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		stepName := getStr(sm, "name")
+		step := StepSummary{
+			Name:       stepName,
+			Phase:      getStr(sm, "phase"),
+			RetryCount: getInt(sm, "retryCount"),
+		}
+
+		if t := getStr(sm, "startTime"); t != "" {
+			step.StartTime = &t
+		}
+		if t := getStr(sm, "completionTime"); t != "" {
+			step.CompletionTime = &t
+		}
+		if r := getStr(sm, "result"); r != "" {
+			// Truncate result for list view
+			if len(r) > 500 {
+				truncated := r[:500] + "..."
+				step.Result = &truncated
+			} else {
+				step.Result = &r
+			}
+		}
+
+		// Merge spec info
+		if ss, exists := specStepMap[stepName]; exists {
+			step.Knight = getStr(ss, "knight")
+			step.Domain = getStr(ss, "domain")
+			if deps := getSlice(ss, "dependsOn"); deps != nil {
+				for _, d := range deps {
+					if ds, ok := d.(string); ok {
+						step.DependsOn = append(step.DependsOn, ds)
+					}
+				}
+			}
+		}
+
+		chain.Steps = append(chain.Steps, step)
+	}
+
+	// If no status steps yet, populate from spec
+	if len(chain.Steps) == 0 {
+		for _, s := range specSteps {
+			sm, ok := s.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			step := StepSummary{
+				Name:   getStr(sm, "name"),
+				Knight: getStr(sm, "knight"),
+				Domain: getStr(sm, "domain"),
+				Phase:  "Pending",
+			}
+			if deps := getSlice(sm, "dependsOn"); deps != nil {
+				for _, d := range deps {
+					if ds, ok := d.(string); ok {
+						step.DependsOn = append(step.DependsOn, ds)
+					}
+				}
+			}
+			chain.Steps = append(chain.Steps, step)
+		}
+	}
+
+	return chain
+}
+
+// Helper functions for unstructured K8s objects
+func getNestedMap(obj map[string]interface{}, key string) map[string]interface{} {
+	if v, ok := obj[key]; ok {
+		if m, ok := v.(map[string]interface{}); ok {
+			return m
+		}
+	}
+	return nil
+}
+
+func getStr(obj map[string]interface{}, key string) string {
+	if obj == nil {
+		return ""
+	}
+	if v, ok := obj[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func getInt(obj map[string]interface{}, key string) int {
+	if obj == nil {
+		return 0
+	}
+	if v, ok := obj[key]; ok {
+		switch n := v.(type) {
+		case float64:
+			return int(n)
+		case int64:
+			return int(n)
+		}
+	}
+	return 0
+}
+
+func getSlice(obj map[string]interface{}, key string) []interface{} {
+	if obj == nil {
+		return nil
+	}
+	if v, ok := obj[key]; ok {
+		if s, ok := v.([]interface{}); ok {
+			return s
+		}
+	}
+	return nil
 }
 
 func spaHandler(staticDir string) http.HandlerFunc {
