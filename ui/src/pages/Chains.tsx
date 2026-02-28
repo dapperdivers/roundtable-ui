@@ -10,7 +10,7 @@ interface ChainStep {
   startTime: string | null
   completionTime: string | null
   result: string | null
-  dependsOn: string[]
+  dependsOn: string[] | null
   retryCount: number
 }
 
@@ -62,7 +62,7 @@ function layoutSteps(steps: ChainStep[]): Map<string, { col: number; row: number
   function getCol(name: string): number {
     if (columns.has(name)) return columns.get(name)!
     const step = stepMap.get(name)
-    if (!step || step.dependsOn.length === 0) { columns.set(name, 0); return 0 }
+    if (!step || !step.dependsOn || step.dependsOn.length === 0) { columns.set(name, 0); return 0 }
     const maxParent = Math.max(...step.dependsOn.map(d => getCol(d)))
     const col = maxParent + 1
     columns.set(name, col)
@@ -114,7 +114,7 @@ function StepDAG({ steps, currentStep }: { steps: ChainStep[]; currentStep: stri
         {steps.map(step => {
           const target = positions.get(step.name)
           if (!target) return null
-          return step.dependsOn.map(dep => {
+          return (step.dependsOn || []).map(dep => {
             const source = positions.get(dep)
             if (!source) return null
             const s = pos(source.col, source.row)
