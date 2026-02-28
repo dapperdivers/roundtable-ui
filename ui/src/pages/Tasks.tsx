@@ -178,7 +178,8 @@ export function TasksPage() {
           const knightName = knightNameForDomain(domain) || (data as Record<string, unknown>).knight as string || domain
           const cfg = getKnightConfig(knightName)
           const taskText = (data as Record<string, unknown>).task as string || (data as Record<string, unknown>).summary as string || (data as Record<string, unknown>).result as string || ''
-          const cost = (data as Record<string, unknown>).cost as number | undefined
+          const rawCost = (data as Record<string, unknown>).cost
+          const cost = typeof rawCost === 'number' ? rawCost : undefined
           const success = (data as Record<string, unknown>).success as boolean | undefined
           const duration = (data as Record<string, unknown>).duration as string | undefined
 

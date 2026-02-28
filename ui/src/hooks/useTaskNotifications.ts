@@ -46,7 +46,8 @@ export function useTaskNotifications(
         const reason = data.error || 'unknown error'
         addToast(`❌ ${displayName} failed: ${reason}`, 'error')
       } else {
-        const costStr = data.cost ? ` ($${data.cost.toFixed(4)})` : ''
+        const cost = typeof data.cost === 'number' ? data.cost : null
+        const costStr = cost ? ` ($${cost.toFixed(4)})` : ''
         addToast(`${config.emoji} ${displayName} completed ${domain} task${costStr}`, 'success')
       }
     }

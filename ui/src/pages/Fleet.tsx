@@ -24,7 +24,7 @@ export function FleetPage() {
 
     for (const event of events) {
       const parts = event.subject.split('.')
-      const domain = parts[1] || ''
+      const domain = parts[2] || ''
       const name = knightNameForDomain(domain)
       if (!name) continue
 
@@ -60,7 +60,7 @@ export function FleetPage() {
     // Mark busy: has task but fewer results than tasks in recent window
     for (const event of events) {
       const parts = event.subject.split('.')
-      const domain = parts[1] || ''
+      const domain = parts[2] || ''
       const name = knightNameForDomain(domain)
       if (!name || event.type !== 'task') continue
       const ts = new Date(event.timestamp).getTime()
@@ -69,7 +69,7 @@ export function FleetPage() {
         // Check if there's a result after this task
         const hasResult = events.some(e =>
           e.type === 'result' &&
-          knightNameForDomain(e.subject.split('.')[1] || '') === name &&
+          knightNameForDomain(e.subject.split('.')[2] || '') === name &&
           new Date(e.timestamp).getTime() > ts
         )
         if (!hasResult) activity[name].busy = true

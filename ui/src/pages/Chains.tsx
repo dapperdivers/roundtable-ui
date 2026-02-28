@@ -21,7 +21,7 @@ interface ChainRun {
   currentStep: string
   startTime: string | null
   completionTime: string | null
-  steps: ChainStep[]
+  steps: ChainStep[] | null
   schedule?: string
 }
 
@@ -188,7 +188,7 @@ function ChainCard({ chain }: { chain: ChainRun }) {
         {chain.schedule && (
           <span className="text-xs text-gray-500 font-mono">{chain.schedule}</span>
         )}
-        <span className="text-xs text-gray-500">{chain.steps.length} steps</span>
+        <span className="text-xs text-gray-500">{(chain.steps || []).length} steps</span>
         <span className="ml-auto flex items-center gap-1 text-xs text-gray-500">
           <Clock className="w-3 h-3" />
           {formatDuration(chain.startTime, chain.completionTime)}
@@ -196,7 +196,7 @@ function ChainCard({ chain }: { chain: ChainRun }) {
       </button>
       {expanded && (
         <div className="px-5 pb-4 border-t border-roundtable-steel/50">
-          <StepDAG steps={chain.steps} currentStep={chain.currentStep} />
+          <StepDAG steps={chain.steps || []} currentStep={chain.currentStep} />
         </div>
       )}
     </div>

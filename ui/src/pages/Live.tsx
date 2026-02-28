@@ -153,9 +153,9 @@ function EventCard({ event, index, expanded, onToggle }: {
   const isTask = event.type === 'task'
   const taskText = (data.task as string) || (data.summary as string) || ''
   const success = data.success as boolean | undefined
-  const cost = data.cost as number | undefined
-  const duration = data.duration as number | undefined
-  const toolCalls = data.toolCalls as number | undefined
+  const cost = typeof data.cost === 'number' ? data.cost : undefined
+  const duration = typeof data.duration === 'number' ? data.duration : undefined
+  const toolCalls = typeof data.toolCalls === 'number' ? data.toolCalls : undefined
 
   return (
     <div
