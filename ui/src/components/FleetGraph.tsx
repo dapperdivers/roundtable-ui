@@ -348,10 +348,15 @@ export function FleetGraph({ events, connected, knightStatuses = {}, onKnightCli
     )
   }, [activity, connected, events.length, setNodes])
 
-  // Update edges based on recent events
+  // Update edges — debounced to avoid layout thrash (#44)
+  const edgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
-    const newEdges = buildEdges(KNIGHT_NAMES, events)
-    setEdges(newEdges)
+    if (edgeTimerRef.current) clearTimeout(edgeTimerRef.current)
+    edgeTimerRef.current = setTimeout(() => {
+      const newEdges = buildEdges(KNIGHT_NAMES, events)
+      setEdges(newEdges)
+    }, 300)
+    return () => { if (edgeTimerRef.current) clearTimeout(edgeTimerRef.current) }
   }, [events, setEdges])
 
   const onNodeClick = useCallback(

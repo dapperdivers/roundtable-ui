@@ -209,13 +209,20 @@ export function ChainsPage() {
   const [autoRefresh, setAutoRefresh] = useState(false)
   const autoRefreshInitialized = useRef(false)
 
+  const abortRef = useRef<AbortController | null>(null)
+
   const fetchChains = useCallback(() => {
+    // Abort any in-flight request (#39)
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     setLoading(true)
-    fetch('/api/chains')
+    fetch('/api/chains', { signal: controller.signal })
       .then(r => r.json())
-      .then((data: ChainRun[]) => setChains(data))
-      .catch(() => setChains([]))
-      .finally(() => setLoading(false))
+      .then((data: ChainRun[]) => { if (!controller.signal.aborted) setChains(data) })
+      .catch((e) => { if (e.name !== 'AbortError') setChains([]) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
   }, [])
 
   useEffect(() => { fetchChains() }, [fetchChains])
@@ -232,12 +239,22 @@ export function ChainsPage() {
     }
   }, [chains, autoRefresh])
 
-  // Poll interval
+  // Poll interval — debounced (#38), pause when hidden (#22)
   useEffect(() => {
     if (!autoRefresh) return
-    const interval = setInterval(fetchChains, 5000)
-    return () => clearInterval(interval)
+    let interval: ReturnType<typeof setInterval> | null = null
+
+    const start = () => { if (!interval) interval = setInterval(fetchChains, 8000) }
+    const stop = () => { if (interval) { clearInterval(interval); interval = null } }
+    const onVis = () => { document.hidden ? stop() : start() }
+
+    start()
+    document.addEventListener('visibilitychange', onVis)
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis) }
   }, [autoRefresh, fetchChains])
+
+  // Cleanup abort on unmount
+  useEffect(() => () => { abortRef.current?.abort() }, [])
 
   return (
     <div>

@@ -11,6 +11,11 @@ const MAX_EVENTS = 200
 const RECONNECT_DELAY_MS = 3000
 const MAX_RECONNECT_DELAY_MS = 30000
 
+/** Add jitter (±25%) to prevent thundering herd reconnects (#37) */
+function jitter(ms: number): number {
+  return ms * (0.75 + Math.random() * 0.5)
+}
+
 export function useWebSocket() {
   const [events, setEvents] = useState<NatsEvent[]>([])
   const [connected, setConnected] = useState(false)
@@ -48,9 +53,9 @@ export function useWebSocket() {
       if (!mountedRef.current) return
       setConnected(false)
 
-      // Exponential backoff reconnect
-      const delay = reconnectDelay.current
-      reconnectDelay.current = Math.min(delay * 2, MAX_RECONNECT_DELAY_MS)
+      // Exponential backoff reconnect with jitter (#37)
+      const delay = jitter(reconnectDelay.current)
+      reconnectDelay.current = Math.min(reconnectDelay.current * 2, MAX_RECONNECT_DELAY_MS)
       reconnectTimer.current = setTimeout(connect, delay)
     }
 

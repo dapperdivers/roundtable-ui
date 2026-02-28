@@ -22,14 +22,19 @@ export function FleetPage() {
     const pendingTasks = new Set<string>()
     const resultsSeen = new Set<string>()
 
-    for (const event of events) {
+    // Only process events within our activity window (#43 — bounded memory)
+    const windowedEvents = events.filter(e => {
+      const ts = new Date(e.timestamp).getTime()
+      return now - ts <= windowMs
+    })
+
+    for (const event of windowedEvents) {
       const parts = event.subject.split('.')
       const domain = parts[2] || ''
       const name = knightNameForDomain(domain)
       if (!name) continue
 
       const ts = new Date(event.timestamp).getTime()
-      if (now - ts > windowMs) continue
 
       if (!activity[name]) {
         activity[name] = { recent: 0, lastActive: null, busy: false, sparkline: [0, 0, 0, 0, 0] }
@@ -58,7 +63,7 @@ export function FleetPage() {
     }
 
     // Mark busy: has task but fewer results than tasks in recent window
-    for (const event of events) {
+    for (const event of windowedEvents) {
       const parts = event.subject.split('.')
       const domain = parts[2] || ''
       const name = knightNameForDomain(domain)

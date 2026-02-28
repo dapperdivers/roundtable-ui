@@ -35,7 +35,7 @@ export function useTaskNotifications(
       const data = event.data as ResultData
       // Extract domain from subject like "roundtable.security.result"
       const parts = event.subject.split('.')
-      const domain = data.domain || parts[1] || 'unknown'
+      const domain = data?.domain || parts[2] || parts[1] || 'unknown'
       const knightName = knightNameForDomain(domain)
       const config = knightName ? getKnightConfig(knightName) : getKnightConfig(domain)
       const displayName = knightName

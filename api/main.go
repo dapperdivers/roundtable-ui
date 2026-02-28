@@ -307,11 +307,13 @@ func knightLogsHandler(namespace string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/plain")
 		buf := make([]byte, 4096)
 		for {
-			n, err := stream.Read(buf)
+			n, readErr := stream.Read(buf)
 			if n > 0 {
-				w.Write(buf[:n])
+				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+					break // client disconnected — stop reading (#53)
+				}
 			}
-			if err != nil {
+			if readErr != nil {
 				break
 			}
 		}
@@ -370,10 +372,12 @@ func taskHistoryHandler() http.HandlerFunc {
 
 		// Get last N messages
 		limit := 50
+		// Use a named ephemeral consumer with InactiveThreshold for auto-cleanup (#54)
 		cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-			DeliverPolicy: jetstream.DeliverLastPerSubjectPolicy,
-			FilterSubject: "fleet-a.results.>",
-			AckPolicy:     jetstream.AckNonePolicy,
+			DeliverPolicy:     jetstream.DeliverLastPerSubjectPolicy,
+			FilterSubject:     "fleet-a.results.>",
+			AckPolicy:         jetstream.AckNonePolicy,
+			InactiveThreshold: 30 * time.Second,
 		})
 		if err != nil {
 			// Fall back to stream info
@@ -516,13 +520,19 @@ func wsHandler() http.HandlerFunc {
 			return
 		}
 
-		// Write mutex — gorilla websocket is not concurrent-write safe
+		// Write mutex + closed flag — gorilla websocket is not concurrent-write safe (#42)
 		var writeMu sync.Mutex
+		var closed bool
 		safeWrite := func(data []byte) {
 			writeMu.Lock()
 			defer writeMu.Unlock()
+			if closed {
+				return
+			}
 			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			conn.WriteMessage(websocket.TextMessage, data)
+			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+				closed = true
+			}
 		}
 
 		// Done channel to clean up NATS subscriptions when WS closes
@@ -577,6 +587,9 @@ func wsHandler() http.HandlerFunc {
 			close(done)
 			taskSub.Unsubscribe()
 			resultSub.Unsubscribe()
+			writeMu.Lock()
+			closed = true
+			writeMu.Unlock()
 			conn.Close()
 		}()
 

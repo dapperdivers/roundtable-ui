@@ -32,10 +32,28 @@ export function useFleet(refreshInterval = 10000) {
     }
   }, [])
 
+  // Pause polling when tab is hidden (#22)
   useEffect(() => {
     refresh()
-    const interval = setInterval(refresh, refreshInterval)
-    return () => clearInterval(interval)
+    let interval: ReturnType<typeof setInterval> | null = null
+
+    const startPolling = () => {
+      if (!interval) interval = setInterval(refresh, refreshInterval)
+    }
+    const stopPolling = () => {
+      if (interval) { clearInterval(interval); interval = null }
+    }
+
+    const onVisibility = () => {
+      if (document.hidden) { stopPolling() } else { startPolling(); refresh() }
+    }
+
+    startPolling()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      stopPolling()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [refresh, refreshInterval])
 
   return { knights, loading, error, refresh }
