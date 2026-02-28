@@ -185,6 +185,35 @@ func main() {
 	}
 }
 
+func buildKnightStatus(pod corev1.Pod) KnightStatus {
+	status := "offline"
+	var restarts int32
+	ready := false
+	if len(pod.Status.ContainerStatuses) > 0 {
+		cs := pod.Status.ContainerStatuses[0]
+		restarts = cs.RestartCount
+		ready = cs.Ready
+		if ready {
+			status = "online"
+		} else if pod.Status.Phase == "Running" {
+			status = "starting"
+		}
+	}
+	ks := KnightStatus{
+		Name:     pod.Labels["app.kubernetes.io/instance"],
+		Domain:   pod.Labels["roundtable.io/domain"],
+		Status:   status,
+		Ready:    ready,
+		Restarts: restarts,
+		Age:      time.Since(pod.CreationTimestamp.Time).Round(time.Second).String(),
+		Labels:   pod.Labels,
+	}
+	if len(pod.Spec.Containers) > 0 {
+		ks.Image = pod.Spec.Containers[0].Image
+	}
+	return ks
+}
+
 func fleetHandler(namespace string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if k8sClient == nil {
@@ -210,42 +239,36 @@ func fleetHandler(namespace string) http.HandlerFunc {
 			if len(pod.Spec.Containers) == 0 {
 				continue
 			}
-
-			status := "offline"
-			var restarts int32
-			ready := false
-			if len(pod.Status.ContainerStatuses) > 0 {
-				cs := pod.Status.ContainerStatuses[0]
-				restarts = cs.RestartCount
-				ready = cs.Ready
-				if ready {
-					status = "online"
-				} else if pod.Status.Phase == "Running" {
-					status = "starting"
-				}
-			}
-
-			knight := KnightStatus{
-				Name:     pod.Labels["app.kubernetes.io/instance"],
-				Domain:   pod.Labels["roundtable.io/domain"],
-				Status:   status,
-				Ready:    ready,
-				Restarts: restarts,
-				Age:      time.Since(pod.CreationTimestamp.Time).Round(time.Second).String(),
-				Labels:   pod.Labels,
-			}
-
-			// Get image from first container
-			if len(pod.Spec.Containers) > 0 {
-				knight.Image = pod.Spec.Containers[0].Image
-			}
-
-			knights = append(knights, knight)
+			knights = append(knights, buildKnightStatus(pod))
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(knights)
 	}
+}
+
+// KnightDetail is a safe DTO — no raw K8s pod data exposed (#46)
+type KnightDetail struct {
+	KnightStatus
+	Node       string            `json:"node"`
+	PodName    string            `json:"podName"`
+	Phase      string            `json:"phase"`
+	StartTime  *time.Time        `json:"startTime"`
+	Containers []ContainerDetail `json:"containers"`
+	Conditions []PodCondition    `json:"conditions"`
+}
+
+type ContainerDetail struct {
+	Name    string `json:"name"`
+	Image   string `json:"image"`
+	Ready   bool   `json:"ready"`
+	State   string `json:"state"`
+	Started *bool  `json:"started"`
+}
+
+type PodCondition struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
 }
 
 func knightHandler(namespace string) http.HandlerFunc {
@@ -267,8 +290,39 @@ func knightHandler(namespace string) http.HandlerFunc {
 		}
 
 		pod := pods.Items[0]
+
+		// Build safe DTO (#46)
+		detail := KnightDetail{
+			KnightStatus: buildKnightStatus(pod),
+			Node:         pod.Spec.NodeName,
+			PodName:      pod.Name,
+			Phase:        string(pod.Status.Phase),
+		}
+		if !pod.CreationTimestamp.IsZero() {
+			t := pod.CreationTimestamp.Time
+			detail.StartTime = &t
+		}
+		for _, c := range pod.Status.ContainerStatuses {
+			state := "unknown"
+			if c.State.Running != nil {
+				state = "running"
+			} else if c.State.Waiting != nil {
+				state = "waiting:" + c.State.Waiting.Reason
+			} else if c.State.Terminated != nil {
+				state = "terminated:" + c.State.Terminated.Reason
+			}
+			detail.Containers = append(detail.Containers, ContainerDetail{
+				Name: c.Name, Image: c.Image, Ready: c.Ready, State: state, Started: c.Started,
+			})
+		}
+		for _, cond := range pod.Status.Conditions {
+			detail.Conditions = append(detail.Conditions, PodCondition{
+				Type: string(cond.Type), Status: string(cond.Status),
+			})
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(pod)
+		json.NewEncoder(w).Encode(detail)
 	}
 }
 
@@ -291,8 +345,8 @@ func knightLogsHandler(namespace string) http.HandlerFunc {
 			return
 		}
 
-		// Add timeout to prevent indefinite streaming
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		// Timeout prevents indefinite streaming (#55)
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
 
 		req := k8sClient.CoreV1().Pods(namespace).GetLogs(pods.Items[0].Name, &corev1.PodLogOptions{
