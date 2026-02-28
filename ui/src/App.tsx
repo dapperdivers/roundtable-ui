@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X } from 'lucide-react'
+import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard } from 'lucide-react'
 import { FleetPage } from './pages/Fleet'
 import { TasksPage } from './pages/Tasks'
 import { BriefingsPage } from './pages/Briefings'
 import { LivePage } from './pages/Live'
 import { ChainsPage } from './pages/Chains'
 import { SessionsPage } from './pages/Sessions'
+import { DashboardPage } from './pages/Dashboard'
 import { ToastProvider, useToast } from './components/Toast'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useTaskNotifications } from './hooks/useTaskNotifications'
@@ -19,12 +20,13 @@ function NotificationWatcher() {
 }
 
 const navItems = [
-  { path: '/', icon: Shield, label: 'The Round Table' },
+  { path: '/', icon: LayoutDashboard, label: 'Command Center' },
+  { path: '/fleet', icon: Shield, label: 'Fleet' },
   { path: '/quests', icon: Scroll, label: 'Quests' },
   { path: '/flow', icon: GitGraph, label: 'Message Flow' },
-  { path: '/chronicles', icon: BookOpen, label: 'Chronicles' },
   { path: '/chains', icon: Link2, label: 'Chains' },
   { path: '/sessions', icon: TreePine, label: 'Sessions' },
+  { path: '/chronicles', icon: BookOpen, label: 'Chronicles' },
 ]
 
 export default function App() {
@@ -99,7 +101,8 @@ export default function App() {
       {/* Main content */}
       <main className="flex-1 overflow-auto p-4 md:p-8 mt-14 md:mt-0">
         <Routes>
-          <Route path="/" element={<FleetPage />} />
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/fleet" element={<FleetPage />} />
           <Route path="/quests" element={<TasksPage />} />
           <Route path="/flow" element={<LivePage />} />
           <Route path="/chronicles" element={<BriefingsPage />} />
