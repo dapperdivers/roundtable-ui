@@ -122,6 +122,43 @@ export function LivePage() {
       {/* Fleet network graph — React Flow powered */}
       <FleetGraph events={filteredEvents} connected={connected} knightStatuses={knightStatuses} onKnightClick={handleKnightClick} />
 
+      {/* Inter-knight comms summary (#51) */}
+      {(() => {
+        const comms: Record<string, number> = {}
+        for (const event of filteredEvents.slice(0, 100)) {
+          const data = (typeof event.data === 'string'
+            ? (() => { try { return JSON.parse(event.data as string) } catch { return {} } })()
+            : event.data || {}) as Record<string, unknown>
+          const from = knightNameForDomain((data.from as string) || '')
+          const parts = event.subject.split('.')
+          const to = knightNameForDomain(parts[2] || '')
+          if (from && to && from !== to) {
+            const key = `${from} → ${to}`
+            comms[key] = (comms[key] || 0) + 1
+          }
+        }
+        const entries = Object.entries(comms).sort((a, b) => b[1] - a[1])
+        if (entries.length === 0) return null
+
+        return (
+          <div className="mt-4 bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
+            <h3 className="text-sm font-medium text-gray-400 mb-2">🔗 Knight-to-Knight Communications</h3>
+            <div className="flex flex-wrap gap-2">
+              {entries.map(([route, count]) => {
+                const [from, to] = route.split(' → ')
+                const fromCfg = getKnightConfig(from)
+                const toCfg = getKnightConfig(to)
+                return (
+                  <span key={route} className="text-xs bg-roundtable-navy border border-roundtable-steel px-2.5 py-1 rounded-full">
+                    {fromCfg.emoji} <span className="text-gray-400">→</span> {toCfg.emoji} <span className="text-gray-500">×{count}</span>
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Recent messages log */}
       <div className="mt-4 bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
         <h3 className="text-sm font-medium text-gray-400 mb-3">Recent Messages</h3>

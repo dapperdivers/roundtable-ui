@@ -171,8 +171,45 @@ function StepDAG({ steps, currentStep }: { steps: ChainStep[]; currentStep: stri
   )
 }
 
+function StepDetail({ step }: { step: ChainStep }) {
+  const cfg = getKnightConfig(step.knight)
+  return (
+    <div className="bg-roundtable-navy border border-roundtable-steel rounded-lg p-4 mt-2">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">{cfg.emoji}</span>
+        <span className="font-semibold text-white capitalize">{step.name}</span>
+        <PhaseBadge phase={step.phase} />
+        <span className="text-xs text-gray-500 ml-auto">{formatDuration(step.startTime, step.completionTime)}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+        <div><span className="text-gray-500">Knight:</span> <span className="text-gray-300">{step.knight}</span></div>
+        <div><span className="text-gray-500">Domain:</span> <span className="text-gray-300">{step.domain}</span></div>
+        {step.dependsOn && step.dependsOn.length > 0 && (
+          <div className="col-span-2"><span className="text-gray-500">Depends on:</span> <span className="text-gray-300">{step.dependsOn.join(', ')}</span></div>
+        )}
+        {step.retryCount > 0 && (
+          <div><span className="text-gray-500">Retries:</span> <span className="text-yellow-400">{step.retryCount}</span></div>
+        )}
+      </div>
+      {step.result && (
+        <div>
+          <span className="text-xs text-gray-500 uppercase">Result</span>
+          <pre className="text-xs text-gray-400 whitespace-pre-wrap max-h-64 overflow-auto mt-1 bg-roundtable-slate rounded p-3 border border-roundtable-steel/50">
+            {step.result}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ChainCard({ chain }: { chain: ChainRun }) {
   const [expanded, setExpanded] = useState(false)
+  const [selectedStep, setSelectedStep] = useState<string | null>(null)
+
+  const activeStep = selectedStep
+    ? (chain.steps || []).find(s => s.name === selectedStep) || null
+    : null
 
   return (
     <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl overflow-hidden">
@@ -197,6 +234,24 @@ function ChainCard({ chain }: { chain: ChainRun }) {
       {expanded && (
         <div className="px-5 pb-4 border-t border-roundtable-steel/50">
           <StepDAG steps={chain.steps || []} currentStep={chain.currentStep} />
+          {/* Step list for drill-down (#49) */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(chain.steps || []).map(step => {
+              const cfg = getKnightConfig(step.knight)
+              return (
+                <button key={step.name}
+                  onClick={() => setSelectedStep(selectedStep === step.name ? null : step.name)}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                    selectedStep === step.name
+                      ? 'bg-roundtable-gold/20 border-roundtable-gold/30 text-roundtable-gold'
+                      : 'border-roundtable-steel text-gray-400 hover:text-white hover:border-gray-500'
+                  }`}>
+                  {cfg.emoji} {step.name}
+                </button>
+              )
+            })}
+          </div>
+          {activeStep && <StepDetail step={activeStep} />}
         </div>
       )}
     </div>
