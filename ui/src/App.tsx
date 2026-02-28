@@ -1,5 +1,6 @@
+import { useState, useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine } from 'lucide-react'
+import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X } from 'lucide-react'
 import { FleetPage } from './pages/Fleet'
 import { TasksPage } from './pages/Tasks'
 import { BriefingsPage } from './pages/Briefings'
@@ -28,14 +29,37 @@ const navItems = [
 
 export default function App() {
   const location = useLocation()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // Close sidebar on navigation (mobile)
+  useEffect(() => { setSidebarOpen(false) }, [location.pathname])
 
   return (
     <ToastProvider>
     <div className="flex h-screen">
       <NotificationWatcher />
+
+      {/* Mobile header (#58) */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 bg-roundtable-slate border-b border-roundtable-steel px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Swords className="w-6 h-6 text-roundtable-gold" />
+          <span className="text-sm font-bold text-roundtable-gold">Round Table</span>
+        </div>
+        <button onClick={() => setSidebarOpen(o => !o)} className="text-gray-400 p-1">
+          {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+      </div>
+
+      {/* Sidebar backdrop (mobile) */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* Sidebar */}
-      <nav className="w-64 bg-roundtable-slate border-r border-roundtable-steel flex flex-col">
-        <div className="p-6 border-b border-roundtable-steel">
+      <nav className={`fixed md:relative z-40 h-full w-64 bg-roundtable-slate border-r border-roundtable-steel flex flex-col transition-transform duration-200 ${
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+      }`}>
+        <div className="p-6 border-b border-roundtable-steel hidden md:block">
           <div className="flex items-center gap-3">
             <Swords className="w-8 h-8 text-roundtable-gold" />
             <div>
@@ -45,7 +69,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex-1 p-4 space-y-1">
+        <div className="flex-1 p-4 space-y-1 mt-14 md:mt-0">
           {navItems.map(({ path, icon: Icon, label }) => {
             const active = location.pathname === path
             return (
@@ -73,7 +97,7 @@ export default function App() {
       </nav>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto p-8">
+      <main className="flex-1 overflow-auto p-4 md:p-8 mt-14 md:mt-0">
         <Routes>
           <Route path="/" element={<FleetPage />} />
           <Route path="/quests" element={<TasksPage />} />
