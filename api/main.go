@@ -79,6 +79,45 @@ type TaskEvent struct {
 	Timestamp time.Time       `json:"timestamp"`
 }
 
+// rateLimiter is a simple sliding-window rate limiter (#12)
+type rateLimiterT struct {
+	mu       sync.Mutex
+	tokens   int
+	max      int
+	interval time.Duration
+	last     time.Time
+}
+
+func newRateLimiter(max int, interval time.Duration) *rateLimiterT {
+	return &rateLimiterT{tokens: max, max: max, interval: interval, last: time.Now()}
+}
+
+func (rl *rateLimiterT) allow() bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	now := time.Now()
+	elapsed := now.Sub(rl.last)
+	if elapsed >= rl.interval {
+		rl.tokens = rl.max
+		rl.last = now
+	}
+	if rl.tokens <= 0 {
+		return false
+	}
+	rl.tokens--
+	return true
+}
+
+func (rl *rateLimiterT) middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !rl.allow() {
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	natsURL := envOr("NATS_URL", "nats://nats.database.svc:4222")
 	namespace := envOr("NAMESPACE", "roundtable")
@@ -118,8 +157,12 @@ func main() {
 		}
 	}
 
+	// Simple rate limiter (#12)
+	rateLimiter := newRateLimiter(100, time.Second) // 100 req/s
+
 	// Router
 	r := mux.NewRouter()
+	r.Use(rateLimiter.middleware)
 	api := r.PathPrefix("/api").Subrouter()
 
 	// Fleet endpoints
@@ -151,17 +194,16 @@ func main() {
 	// Serve static UI files with SPA fallback
 	r.PathPrefix("/").HandlerFunc(spaHandler("./static"))
 
-	// CORS — local install: allow same-origin; configurable via ALLOWED_ORIGINS
-	allowedOrigins := []string{}
-	if origins := envOr("ALLOWED_ORIGINS", ""); origins != "" {
-		allowedOrigins = strings.Split(origins, ",")
-	}
-	handler := cors.New(cors.Options{
-		AllowedOrigins:   allowedOrigins,
+	// CORS — defaults to same-origin (no origins = same-origin only) (#57)
+	corsOpts := cors.Options{
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type"},
 		AllowCredentials: false,
-	}).Handler(r)
+	}
+	if origins := envOr("ALLOWED_ORIGINS", ""); origins != "" {
+		corsOpts.AllowedOrigins = strings.Split(origins, ",")
+	}
+	handler := cors.New(corsOpts).Handler(r)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
@@ -594,7 +636,14 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 		// Done channel to clean up NATS subscriptions when WS closes
 		done := make(chan struct{})
 
-		// Subscribe to all task and result events
+		// Subscribe to all task and result events (#19: check NATS connection health)
+		if !nc.IsConnected() {
+			log.Printf("NATS not connected, rejecting WS")
+			conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "NATS unavailable"))
+			conn.Close()
+			return
+		}
+
 		taskSub, err := nc.Subscribe(fleetPrefix+".tasks.>", func(msg *nats.Msg) {
 			select {
 			case <-done:

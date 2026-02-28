@@ -202,6 +202,21 @@ export function TasksPage() {
                 <div className="flex items-center gap-2 text-xs text-gray-500">
                   {duration && <span>{duration}</span>}
                   {cost != null && cost > 0 && <span className="text-roundtable-gold">${cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2)}</span>}
+                  {/* Replay button (#52) */}
+                  {!isResult && taskText && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setTask(taskText)
+                        if (knightName && KNIGHT_CONFIG[knightName]) setKnight(knightName)
+                        window.scrollTo({ top: 0, behavior: 'smooth' })
+                      }}
+                      className="text-roundtable-gold hover:text-yellow-300 transition-colors"
+                      title="Replay this quest"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                    </button>
+                  )}
                   <Clock className="w-3 h-3" />
                   {h.timestamp ? new Date(h.timestamp).toLocaleString() : '—'}
                 </div>

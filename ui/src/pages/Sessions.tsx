@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { TreePine, ChevronRight, ChevronDown, Wrench, MessageSquare, Brain, RefreshCw, Search } from 'lucide-react'
+import { TreePine, ChevronRight, ChevronDown, Wrench, MessageSquare, Brain, RefreshCw, Search, BarChart3 } from 'lucide-react'
 import { KNIGHT_CONFIG, getKnightConfig } from '../lib/knights'
-import type { SessionEntry, SessionTreeNode } from '../hooks/useKnightSession'
+import type { SessionEntry, SessionTreeNode, KnightSessionStats } from '../hooks/useKnightSession'
 
 const entryTypeIcons: Record<string, string> = {
   user: '📨',
@@ -110,6 +110,9 @@ export function SessionsPage() {
   const [error, setError] = useState<string | null>(null)
   const [filterType, setFilterType] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [stats, setStats] = useState<KnightSessionStats | null>(null)
+  const [allKnightStats, setAllKnightStats] = useState<Record<string, KnightSessionStats>>({})
+  const [showFleetPerf, setShowFleetPerf] = useState(false)
 
   const knightNames = Object.keys(KNIGHT_CONFIG)
   const config = getKnightConfig(selectedKnight)
@@ -118,6 +121,12 @@ export function SessionsPage() {
     setLoading(true)
     setError(null)
     try {
+      // Always fetch stats
+      fetch(`/api/fleet/${selectedKnight}/session?type=stats`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setStats(d) })
+        .catch(() => {})
+
       if (view === 'tree') {
         const res = await fetch(`/api/fleet/${selectedKnight}/session?type=tree`)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -137,6 +146,19 @@ export function SessionsPage() {
   }, [selectedKnight, view])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Fetch fleet-wide stats for performance comparison (#50)
+  const fetchFleetPerf = useCallback(async () => {
+    setShowFleetPerf(true)
+    const results: Record<string, KnightSessionStats> = {}
+    await Promise.all(knightNames.map(async k => {
+      try {
+        const res = await fetch(`/api/fleet/${k}/session?type=stats`)
+        if (res.ok) results[k] = await res.json()
+      } catch {}
+    }))
+    setAllKnightStats(results)
+  }, [knightNames])
 
   // Build tree from flat nodes
   const tree = useMemo(() => {
@@ -244,6 +266,63 @@ export function SessionsPage() {
           </div>
         )}
       </div>
+
+      {/* Knight stats bar */}
+      {stats?.session && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+          <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
+            <p className="text-xs text-gray-500">Messages</p>
+            <p className="text-lg font-bold text-white">{stats.session.totalMessages}</p>
+          </div>
+          <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
+            <p className="text-xs text-gray-500">Tool Calls</p>
+            <p className="text-lg font-bold text-purple-400">{stats.session.toolCalls}</p>
+          </div>
+          <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
+            <p className="text-xs text-gray-500">Tokens</p>
+            <p className="text-lg font-bold text-white">{stats.session.tokens.total.toLocaleString()}</p>
+          </div>
+          <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
+            <p className="text-xs text-gray-500">Cost</p>
+            <p className="text-lg font-bold text-roundtable-gold">{formatCost(stats.session.cost)}</p>
+          </div>
+          <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3 flex items-center justify-center">
+            <button onClick={fetchFleetPerf}
+              className="text-xs text-gray-400 hover:text-roundtable-gold flex items-center gap-1">
+              <BarChart3 className="w-4 h-4" /> Fleet Comparison
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Fleet performance comparison (#50) */}
+      {showFleetPerf && Object.keys(allKnightStats).length > 0 && (
+        <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-4 mb-4">
+          <h3 className="text-sm font-medium text-gray-400 mb-3">📊 Fleet Performance Comparison</h3>
+          <div className="space-y-2">
+            {Object.entries(allKnightStats)
+              .filter(([, s]) => s.session)
+              .sort((a, b) => (b[1].session?.cost || 0) - (a[1].session?.cost || 0))
+              .map(([name, s]) => {
+                const cfg = getKnightConfig(name)
+                const maxCost = Math.max(...Object.values(allKnightStats).map(s => s.session?.cost || 0))
+                const barWidth = maxCost > 0 ? ((s.session?.cost || 0) / maxCost * 100) : 0
+                return (
+                  <div key={name} className="flex items-center gap-3">
+                    <span className="w-24 text-xs text-gray-300 truncate">{cfg.emoji} {name}</span>
+                    <div className="flex-1 h-5 bg-roundtable-navy rounded-full overflow-hidden relative">
+                      <div className="h-full bg-roundtable-gold/30 rounded-full transition-all"
+                        style={{ width: `${barWidth}%` }} />
+                      <span className="absolute right-2 top-0.5 text-[10px] text-gray-400">
+                        {formatCost(s.session?.cost || 0)} · {s.session?.toolCalls || 0} tools · {(s.session?.tokens.total || 0).toLocaleString()} tokens
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-4">
