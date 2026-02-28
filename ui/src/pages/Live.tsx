@@ -159,8 +159,44 @@ export function LivePage() {
         )
       })()}
 
+      {/* Event summary stats */}
+      <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        {(() => {
+          const tasks = filteredEvents.filter(e => e.type === 'task').length
+          const results = filteredEvents.filter(e => e.type === 'result').length
+          const failures = filteredEvents.filter(e => {
+            if (e.type !== 'result') return false
+            const d = parseEventData(e.data)
+            return d.success === false
+          }).length
+          const totalCost = filteredEvents.reduce((sum, e) => {
+            if (e.type !== 'result') return sum
+            const d = parseEventData(e.data)
+            return sum + (typeof d.cost === 'number' ? d.cost : 0)
+          }, 0)
+          return (<>
+            <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
+              <p className="text-xs text-gray-500">Tasks</p>
+              <p className="text-lg font-bold text-blue-400">{tasks}</p>
+            </div>
+            <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
+              <p className="text-xs text-gray-500">Results</p>
+              <p className="text-lg font-bold text-green-400">{results}</p>
+            </div>
+            <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
+              <p className="text-xs text-gray-500">Failures</p>
+              <p className="text-lg font-bold text-red-400">{failures}</p>
+            </div>
+            <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
+              <p className="text-xs text-gray-500">Cost</p>
+              <p className="text-lg font-bold text-roundtable-gold">${totalCost.toFixed(2)}</p>
+            </div>
+          </>)
+        })()}
+      </div>
+
       {/* Recent messages log */}
-      <div className="mt-4 bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
+      <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
         <h3 className="text-sm font-medium text-gray-400 mb-3">Recent Messages</h3>
         {recentEvents.length === 0 ? (
           <p className="text-sm text-gray-600 text-center py-4">Waiting for messages…</p>
