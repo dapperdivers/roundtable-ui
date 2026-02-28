@@ -71,8 +71,34 @@ export function useWebSocket() {
     wsRef.current = ws
   }, [])
 
+  // Seed with recent history from JetStream on mount
   useEffect(() => {
     mountedRef.current = true
+
+    // Load historical events so there's always something to show
+    fetch('/api/tasks')
+      .then((r) => r.json())
+      .then((data) => {
+        if (!mountedRef.current) return
+        const historical: NatsEvent[] = (data.results || [])
+          .map((r: { type?: string; subject?: string; data?: unknown; timestamp?: string }) => ({
+            type: (r.type || 'result') as 'task' | 'result',
+            subject: r.subject || '',
+            data: r.data,
+            timestamp: r.timestamp || new Date().toISOString(),
+          }))
+          .reverse() // newest first
+          .slice(0, MAX_EVENTS)
+        if (historical.length > 0) {
+          setEvents((prev) => {
+            // Merge: live events take priority, then fill with history
+            const merged = [...prev, ...historical]
+            return merged.slice(0, MAX_EVENTS)
+          })
+        }
+      })
+      .catch(() => {}) // silently fail — WS will still work
+
     connect()
     return () => {
       mountedRef.current = false

@@ -71,7 +71,7 @@ export function LivePage() {
   }, [events, filterKnight, filterType, filterDomain])
 
   const [expandedId, setExpandedId] = useState<number | null>(null)
-  const recentEvents = filteredEvents.slice(0, 10)
+  const recentEvents = filteredEvents.slice(0, 50)
 
   return (
     <div>
