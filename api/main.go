@@ -84,6 +84,8 @@ func main() {
 	namespace := envOr("NAMESPACE", "roundtable")
 	port := envOr("PORT", "8080")
 	vaultPath := envOr("VAULT_PATH", "/vault")
+	fleetPrefix := envOr("FLEET_PREFIX", "fleet-a")       // NATS subject prefix (#23)
+	fleetStream := envOr("FLEET_STREAM", "fleet_a_results") // JetStream stream name
 
 	// Connect to NATS
 	var err error
@@ -124,11 +126,11 @@ func main() {
 	api.HandleFunc("/fleet", fleetHandler(namespace)).Methods("GET")
 	api.HandleFunc("/fleet/{knight}", knightHandler(namespace)).Methods("GET")
 	api.HandleFunc("/fleet/{knight}/logs", knightLogsHandler(namespace)).Methods("GET")
-	api.HandleFunc("/fleet/{knight}/session", knightSessionHandler()).Methods("GET")
+	api.HandleFunc("/fleet/{knight}/session", knightSessionHandler(fleetPrefix)).Methods("GET")
 
 	// Task endpoints
-	api.HandleFunc("/tasks", taskHistoryHandler()).Methods("GET")
-	api.HandleFunc("/tasks/dispatch", taskDispatchHandler()).Methods("POST")
+	api.HandleFunc("/tasks", taskHistoryHandler(fleetPrefix, fleetStream)).Methods("GET")
+	api.HandleFunc("/tasks/dispatch", taskDispatchHandler(fleetPrefix)).Methods("POST")
 
 	// Chain endpoints
 	api.HandleFunc("/chains", chainsHandler(namespace)).Methods("GET")
@@ -139,7 +141,7 @@ func main() {
 	api.HandleFunc("/briefings/{date}", briefingHandler(vaultPath)).Methods("GET")
 
 	// WebSocket for real-time NATS events
-	api.HandleFunc("/ws", wsHandler())
+	api.HandleFunc("/ws", wsHandler(fleetPrefix))
 
 	// Health
 	api.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -320,7 +322,7 @@ func knightLogsHandler(namespace string) http.HandlerFunc {
 	}
 }
 
-func knightSessionHandler() http.HandlerFunc {
+func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		name := vars["knight"]
@@ -342,7 +344,7 @@ func knightSessionHandler() http.HandlerFunc {
 
 		// Knight names in NATS are capitalized (e.g., "Galahad")
 		capitalName := capitalizeKnight(name)
-		subject := fmt.Sprintf("fleet-a.introspect.%s", capitalName)
+		subject := fmt.Sprintf("%s.introspect.%s", fleetPrefix, capitalName)
 		payload := fmt.Sprintf(`{"type":"%s"}`, reqType)
 		msg, err := nc.Request(subject, []byte(payload), 5*time.Second)
 		if err != nil {
@@ -356,11 +358,11 @@ func knightSessionHandler() http.HandlerFunc {
 	}
 }
 
-func taskHistoryHandler() http.HandlerFunc {
+func taskHistoryHandler(fleetPrefix, streamName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Read recent results from NATS JetStream
 		ctx := r.Context()
-		stream, err := js.Stream(ctx, "fleet_a_results")
+		stream, err := js.Stream(ctx, streamName)
 		if err != nil {
 			log.Printf("JetStream error: %v", err)
 			http.Error(w, "Task history unavailable", http.StatusInternalServerError)
@@ -375,7 +377,7 @@ func taskHistoryHandler() http.HandlerFunc {
 		// Use a named ephemeral consumer with InactiveThreshold for auto-cleanup (#54)
 		cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
 			DeliverPolicy:     jetstream.DeliverLastPerSubjectPolicy,
-			FilterSubject:     "fleet-a.results.>",
+			FilterSubject:     fleetPrefix + ".results.>",
 			AckPolicy:         jetstream.AckNonePolicy,
 			InactiveThreshold: 30 * time.Second,
 		})
@@ -409,7 +411,7 @@ func taskHistoryHandler() http.HandlerFunc {
 	}
 }
 
-func taskDispatchHandler() http.HandlerFunc {
+func taskDispatchHandler(fleetPrefix string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Knight  string `json:"knight"`
@@ -433,7 +435,7 @@ func taskDispatchHandler() http.HandlerFunc {
 		}
 
 		taskID := fmt.Sprintf("%s-ui-%d", req.Knight, time.Now().UnixMilli())
-		subject := fmt.Sprintf("fleet-a.tasks.%s.%s", req.Domain, taskID)
+		subject := fmt.Sprintf("%s.tasks.%s.%s", fleetPrefix, req.Domain, taskID)
 
 		payload, _ := json.Marshal(map[string]interface{}{
 			"from":    "ui",
@@ -512,7 +514,7 @@ func briefingHandler(vaultPath string) http.HandlerFunc {
 	}
 }
 
-func wsHandler() http.HandlerFunc {
+func wsHandler(fleetPrefix string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -539,7 +541,7 @@ func wsHandler() http.HandlerFunc {
 		done := make(chan struct{})
 
 		// Subscribe to all task and result events
-		taskSub, err := nc.Subscribe("fleet-a.tasks.>", func(msg *nats.Msg) {
+		taskSub, err := nc.Subscribe(fleetPrefix+".tasks.>", func(msg *nats.Msg) {
 			select {
 			case <-done:
 				return
@@ -560,7 +562,7 @@ func wsHandler() http.HandlerFunc {
 			return
 		}
 
-		resultSub, err := nc.Subscribe("fleet-a.results.>", func(msg *nats.Msg) {
+		resultSub, err := nc.Subscribe(fleetPrefix+".results.>", func(msg *nats.Msg) {
 			select {
 			case <-done:
 				return
@@ -643,7 +645,7 @@ func wsHandler() http.HandlerFunc {
 					continue
 				}
 				taskID := fmt.Sprintf("%s-ws-%d", cmd.Knight, time.Now().UnixMilli())
-				subject := fmt.Sprintf("fleet-a.tasks.%s.%s", cmd.Domain, taskID)
+				subject := fmt.Sprintf("%s.tasks.%s.%s", fleetPrefix, cmd.Domain, taskID)
 				payload, _ := json.Marshal(map[string]interface{}{
 					"from":    "dashboard-ws",
 					"task_id": taskID,

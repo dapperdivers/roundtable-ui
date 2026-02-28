@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react'
-import { RefreshCw, Zap, Crown } from 'lucide-react'
+import { RefreshCw, Zap, Crown, DollarSign, TrendingUp } from 'lucide-react'
 import { useFleet } from '../hooks/useFleet'
 import type { Knight } from '../hooks/useFleet'
 import { KnightCard } from '../components/KnightCard'
 import { KnightDetailDrawer } from '../components/KnightDetailDrawer'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { knightNameForDomain } from '../lib/knights'
+import { knightNameForDomain, getKnightConfig } from '../lib/knights'
 
 export function FleetPage() {
   const { knights, loading, error, refresh } = useFleet()
@@ -84,6 +84,31 @@ export function FleetPage() {
     return activity
   }, [events])
 
+  // Aggregate costs from result events (#40)
+  const costStats = useMemo(() => {
+    let totalCost = 0
+    let taskCount = 0
+    const perKnight: Record<string, number> = {}
+
+    for (const event of events) {
+      if (event.type !== 'result') continue
+      const data = (typeof event.data === 'string'
+        ? (() => { try { return JSON.parse(event.data as string) } catch { return {} } })()
+        : event.data || {}) as Record<string, unknown>
+      const cost = typeof data.cost === 'number' ? data.cost : 0
+      if (cost > 0) {
+        totalCost += cost
+        taskCount++
+        const parts = event.subject.split('.')
+        const domain = parts[2] || ''
+        const name = knightNameForDomain(domain)
+        if (name) perKnight[name] = (perKnight[name] || 0) + cost
+      }
+    }
+    const topSpender = Object.entries(perKnight).sort((a, b) => b[1] - a[1])[0]
+    return { totalCost, taskCount, topSpender }
+  }, [events])
+
   const online = knights.filter((k) => k.status === 'online').length
   const total = knights.length
 
@@ -110,7 +135,7 @@ export function FleetPage() {
       </div>
 
       {/* Summary bar */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-4 mb-8">
         <SummaryCard
           label="Online"
           value={online}
@@ -125,7 +150,7 @@ export function FleetPage() {
           color="text-red-400"
         />
         <SummaryCard
-          label="Total Restarts"
+          label="Restarts"
           value={knights.reduce((sum, k) => sum + k.restarts, 0)}
           color="text-yellow-400"
         />
@@ -133,6 +158,18 @@ export function FleetPage() {
           label="Domains"
           value={new Set(knights.map((k) => k.domain)).size}
           color="text-blue-400"
+        />
+        <SummaryCard
+          label="Session Cost"
+          value={costStats.totalCost > 0 ? `$${costStats.totalCost.toFixed(2)}` : '$0.00'}
+          color="text-roundtable-gold"
+          icon={<DollarSign className="w-5 h-5" />}
+        />
+        <SummaryCard
+          label="Tasks"
+          value={costStats.taskCount}
+          color="text-purple-400"
+          icon={<TrendingUp className="w-5 h-5" />}
         />
       </div>
 
@@ -151,6 +188,46 @@ export function FleetPage() {
           <p className="text-gray-400">Summoning knights to the table...</p>
         </div>
       )}
+
+      {/* Error War Room (#45) */}
+      {(() => {
+        const errors = events
+          .filter(e => {
+            if (e.type !== 'result') return false
+            const data = (typeof e.data === 'string'
+              ? (() => { try { return JSON.parse(e.data as string) } catch { return {} } })()
+              : e.data || {}) as Record<string, unknown>
+            return data.success === false || !!data.error
+          })
+          .slice(0, 5)
+
+        if (errors.length === 0) return null
+
+        return (
+          <div className="bg-red-900/10 border border-red-500/20 rounded-xl p-4 mb-6">
+            <h3 className="text-sm font-medium text-red-400 mb-3">⚠️ Recent Failures ({errors.length})</h3>
+            <div className="space-y-2">
+              {errors.map((e, i) => {
+                const data = (typeof e.data === 'string'
+                  ? (() => { try { return JSON.parse(e.data as string) } catch { return {} } })()
+                  : e.data || {}) as Record<string, unknown>
+                const parts = e.subject.split('.')
+                const domain = parts[2] || ''
+                const name = knightNameForDomain(domain)
+                const cfg = name ? getKnightConfig(name) : null
+                return (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span>{cfg?.emoji || '🤖'}</span>
+                    <span className="text-gray-300 capitalize">{name || domain}</span>
+                    <span className="text-red-400 truncate flex-1">{(data.error as string) || 'Task failed'}</span>
+                    <span className="text-gray-600 flex-shrink-0">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Knight grid */}
       {!loading && (
