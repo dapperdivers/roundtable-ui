@@ -229,9 +229,13 @@ function buildEdges(
           strokeWidth,
         },
         animated: count > 0,
+        label: count > 1 ? `${count}` : undefined,
+        labelStyle: { fill: '#9ca3af', fontSize: 10 },
+        labelBgStyle: { fill: '#0f172a', fillOpacity: 0.8 },
+        labelBgPadding: [4, 2] as [number, number],
       }
     } else {
-      // New knight-to-knight edge
+      // New knight-to-knight edge (#41 — animated task journey)
       edges.push({
         id: key,
         source: src,
@@ -241,6 +245,10 @@ function buildEdges(
           strokeWidth,
         },
         animated: count > 0,
+        label: count > 1 ? `${count}` : undefined,
+        labelStyle: { fill: '#9ca3af', fontSize: 10 },
+        labelBgStyle: { fill: '#0f172a', fillOpacity: 0.8 },
+        labelBgPadding: [4, 2] as [number, number],
       })
     }
   }

@@ -2,6 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+/* React Flow animated edge glow (#41) */
+.fleet-graph .react-flow__edge.animated path {
+  stroke-dasharray: 5;
+  animation: flow-dash 0.8s linear infinite, edge-glow 2s ease-in-out infinite;
+}
+
+@keyframes flow-dash {
+  to { stroke-dashoffset: -10; }
+}
+
+@keyframes edge-glow {
+  0%, 100% { filter: drop-shadow(0 0 2px currentColor); }
+  50% { filter: drop-shadow(0 0 6px currentColor); }
+}
+
+/* Knight busy pulse */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+}
+
 @layer base {
   body {
     @apply bg-roundtable-navy min-h-screen;
