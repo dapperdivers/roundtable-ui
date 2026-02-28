@@ -4,7 +4,7 @@ import { useWebSocket, type NatsEvent } from '../hooks/useWebSocket'
 import { useFleet } from '../hooks/useFleet'
 import type { Knight } from '../hooks/useFleet'
 import { getKnightConfig, KNIGHT_CONFIG, knightNameForDomain } from '../lib/knights'
-import { RoundTableGraph } from '../components/RoundTableGraph'
+import { FleetGraph } from '../components/FleetGraph'
 import { KnightDetailDrawer } from '../components/KnightDetailDrawer'
 
 function parseSubject(subject: string) {
@@ -119,7 +119,8 @@ export function LivePage() {
       </div>
 
       {/* Round Table Graph */}
-      <RoundTableGraph events={filteredEvents} connected={connected} knightStatuses={knightStatuses} onKnightClick={handleKnightClick} />
+      {/* Fleet network graph — React Flow powered */}
+      <FleetGraph events={filteredEvents} connected={connected} knightStatuses={knightStatuses} onKnightClick={handleKnightClick} />
 
       {/* Recent messages log */}
       <div className="mt-4 bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
