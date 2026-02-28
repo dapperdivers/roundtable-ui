@@ -254,7 +254,7 @@ function SummaryCard({
   icon,
 }: {
   label: string
-  value: number
+  value: number | string
   total?: number
   color: string
   icon?: React.ReactNode
