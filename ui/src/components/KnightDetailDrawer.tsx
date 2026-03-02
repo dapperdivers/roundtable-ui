@@ -188,40 +188,7 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
               )}
               <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
                 {recent.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="bg-roundtable-slate rounded-lg p-2.5 border border-roundtable-steel/50"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${entryTypeColors[entry.type] || 'bg-gray-500/20 text-gray-400'}`}>
-                          {entry.type === 'tool_use' ? '🔧' : entry.type === 'tool_result' ? '📋' : entry.role === 'user' ? '📨' : '🤖'}
-                          {' '}{entry.type}
-                        </span>
-                        {entry.toolName && (
-                          <span className="text-xs text-purple-400 font-mono">{entry.toolName}</span>
-                        )}
-                      </div>
-                      <span className="text-xs text-gray-600">{formatTimestamp(entry.timestamp)}</span>
-                    </div>
-                    {entry.text && (
-                      <p className="text-xs text-gray-400 line-clamp-2 mt-1">{entry.text}</p>
-                    )}
-                    {entry.input && (
-                      <p className="text-xs text-gray-500 line-clamp-1 mt-1 font-mono">→ {entry.input}</p>
-                    )}
-                    {entry.output && (
-                      <p className="text-xs text-gray-500 line-clamp-1 mt-1 font-mono">← {entry.output}</p>
-                    )}
-                    {entry.cost != null && entry.cost > 0 && (
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-roundtable-gold">{formatCost(entry.cost)}</span>
-                        {entry.tokens && (
-                          <span className="text-xs text-gray-600">{entry.tokens.input + entry.tokens.output} tokens</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <ActivityEntry key={entry.id} entry={entry} />
                 ))}
               </div>
             </div>
@@ -238,6 +205,50 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
         </div>
       </div>
     </>
+  )
+}
+
+function ActivityEntry({ entry }: { entry: any }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div
+      className="bg-roundtable-slate rounded-lg p-2.5 border border-roundtable-steel/50 cursor-pointer"
+      onClick={() => setExpanded(!expanded)}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <span className={`text-xs px-1.5 py-0.5 rounded ${entryTypeColors[entry.type] || 'bg-gray-500/20 text-gray-400'}`}>
+            {entry.type === 'tool_use' ? '🔧' : entry.type === 'tool_result' ? '📋' : entry.role === 'user' ? '📨' : '🤖'}
+            {' '}{entry.type}
+          </span>
+          {entry.toolName && (
+            <span className="text-xs text-purple-400 font-mono">{entry.toolName}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-gray-600">{formatTimestamp(entry.timestamp)}</span>
+          <ChevronRight className={`w-3 h-3 text-gray-600 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        </div>
+      </div>
+      {entry.text && (
+        <p className={`text-xs text-gray-400 mt-1 ${expanded ? 'whitespace-pre-wrap' : 'line-clamp-4'}`}>{entry.text}</p>
+      )}
+      {entry.input && (
+        <p className={`text-xs text-gray-500 mt-1 font-mono ${expanded ? 'whitespace-pre-wrap break-all' : 'line-clamp-3'}`}>→ {entry.input}</p>
+      )}
+      {entry.output && (
+        <p className={`text-xs text-gray-500 mt-1 font-mono ${expanded ? 'whitespace-pre-wrap break-all' : 'line-clamp-3'}`}>← {entry.output}</p>
+      )}
+      {entry.cost != null && entry.cost > 0 && (
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-xs text-roundtable-gold">{formatCost(entry.cost)}</span>
+          {entry.tokens && (
+            <span className="text-xs text-gray-600">{entry.tokens.input + entry.tokens.output} tokens</span>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

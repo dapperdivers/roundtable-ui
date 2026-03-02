@@ -20,9 +20,39 @@ export function DashboardPage() {
   const { knights } = useFleet()
   const { events, connected } = useWebSocket()
   const [chains, setChains] = useState<ChainSummary[]>([])
+  const [sessionCosts, setSessionCosts] = useState<{ total: number; perKnight: Record<string, number> }>({ total: 0, perKnight: {} })
 
   useEffect(() => {
     fetch('/api/chains').then(r => r.json()).then(setChains).catch(() => {})
+  }, [])
+
+  // Fetch cumulative session costs from each knight on load
+  useEffect(() => {
+    (async () => {
+      try {
+        const fleetRes = await fetch('/api/fleet')
+        const fleetData = await fleetRes.json()
+        const names: string[] = (fleetData || []).map((k: any) => k.name)
+
+        const results = await Promise.allSettled(
+          names.map(name =>
+            fetch(`/api/fleet/${name}/session?type=stats`).then(r => r.json())
+          )
+        )
+
+        let total = 0
+        const perKnight: Record<string, number> = {}
+        results.forEach((r, i) => {
+          if (r.status === 'fulfilled' && r.value?.session?.cost) {
+            const cost = r.value.session.cost
+            total += cost
+            perKnight[names[i]] = cost
+          }
+        })
+
+        setSessionCosts({ total, perKnight })
+      } catch { /* ignore */ }
+    })()
   }, [])
 
   const stats = useMemo(() => {
@@ -50,12 +80,19 @@ export function DashboardPage() {
       if (name) knightCosts[name] = (knightCosts[name] || 0) + cost
     }
 
-    const topKnights = Object.entries(knightCosts)
+    // Merge cumulative session costs (primary) with live WS costs (supplementary)
+    const mergedCosts: Record<string, number> = { ...sessionCosts.perKnight }
+    for (const [name, cost] of Object.entries(knightCosts)) {
+      mergedCosts[name] = (mergedCosts[name] || 0) + cost
+    }
+    const mergedTotal = sessionCosts.total + totalCost
+
+    const topKnights = Object.entries(mergedCosts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
 
-    return { totalCost, totalTasks, totalResults, failures, topKnights }
-  }, [events])
+    return { totalCost: mergedTotal, totalTasks, totalResults, failures, topKnights }
+  }, [events, sessionCosts])
 
   const online = knights.filter(k => k.status === 'online').length
   const runningChains = chains.filter(c => c.phase === 'Running' || c.phase === 'StepRunning')
