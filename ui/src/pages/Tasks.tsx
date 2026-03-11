@@ -22,9 +22,20 @@ export function TasksPage() {
   }>>([])
   const [history, setHistory] = useState<QuestHistory[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [fleetPrefix, setFleetPrefix] = useState('fleet-a')
 
   const config = getKnightConfig(knight)
   const knightNames = Object.keys(KNIGHT_CONFIG)
+
+  // Fetch fleet configuration from backend (#60)
+  useEffect(() => {
+    fetch('/api/config')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.fleetPrefix) setFleetPrefix(data.fleetPrefix)
+      })
+      .catch(() => {})
+  }, [])
 
   const loadHistory = () => {
     setHistoryLoading(true)
@@ -115,7 +126,7 @@ export function TasksPage() {
           </div>
         </div>
         <p className="text-xs text-gray-500">
-          Dispatching to domain: <span className="text-roundtable-gold font-mono">{config.domain}</span> via NATS subject: <span className="font-mono">fleet-a.tasks.{config.domain}.*</span>
+          Dispatching to domain: <span className="text-roundtable-gold font-mono">{config.domain}</span> via NATS subject: <span className="font-mono">{fleetPrefix}.tasks.{config.domain}.*</span>
         </p>
       </div>
 

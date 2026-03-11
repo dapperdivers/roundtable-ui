@@ -186,6 +186,14 @@ func main() {
 	// WebSocket for real-time NATS events
 	api.HandleFunc("/ws", wsHandler(fleetPrefix))
 
+	// Config endpoint to expose fleet prefix to frontend (#60)
+	api.HandleFunc("/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"fleetPrefix": fleetPrefix,
+		})
+	}).Methods("GET")
+
 	// Health
 	api.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
