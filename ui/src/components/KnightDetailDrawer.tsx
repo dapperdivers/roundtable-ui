@@ -138,7 +138,7 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
             <span className="text-xs text-gray-500">•</span>
             <span className="text-xs text-gray-500">{knight.restarts} restarts</span>
             <span className="text-xs text-gray-500">•</span>
-            <span className="text-xs text-gray-400 font-mono">{knight.node}</span>
+            <span className="text-xs text-gray-400 font-mono">{knight.name}</span>
           </div>
 
           {loading && (
