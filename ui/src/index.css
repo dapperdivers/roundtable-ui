@@ -28,3 +28,26 @@
     @apply bg-roundtable-navy min-h-screen;
   }
 }
+
+/* Mobile responsive improvements (#67) */
+@media (max-width: 768px) {
+  /* Responsive table scrolling */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Tighter padding on mobile */
+  .p-8 {
+    padding: 1rem;
+  }
+
+  /* Prevent text overflow */
+  .truncate-mobile {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+  }
+}

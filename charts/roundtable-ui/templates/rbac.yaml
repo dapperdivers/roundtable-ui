@@ -10,7 +10,7 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: ["ai.roundtable.io"]
     resources: ["knights", "chains", "missions", "roundtables"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

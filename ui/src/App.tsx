@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard, Target, DollarSign, LogOut, Crown } from 'lucide-react'
+import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard, Target, DollarSign, LogOut, Crown, Network } from 'lucide-react'
 import { FleetPage } from './pages/Fleet'
 import { TasksPage } from './pages/Tasks'
 import { BriefingsPage } from './pages/Briefings'
@@ -10,6 +10,7 @@ import { SessionsPage } from './pages/Sessions'
 import { DashboardPage } from './pages/Dashboard'
 import { MissionsPage } from './pages/Missions'
 import { CostDashboardPage } from './pages/CostDashboard'
+import { ArchitecturePage } from './pages/Architecture'
 import { LoginPage } from './pages/Login'
 import { RoundTablesPage } from './pages/RoundTables'
 import { ToastProvider, useToast } from './components/Toast'
@@ -34,6 +35,7 @@ const navItems = [
   { path: '/chains', icon: Link2, label: 'Chains' },
   { path: '/costs', icon: DollarSign, label: 'Costs' },
   { path: '/sessions', icon: TreePine, label: 'Sessions' },
+  { path: '/architecture', icon: Network, label: 'Architecture' },
   { path: '/chronicles', icon: BookOpen, label: 'Chronicles' },
 ]
 
@@ -177,6 +179,7 @@ export default function App() {
           <Route path="/chains" element={<ChainsPage />} />
           <Route path="/costs" element={<CostDashboardPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/architecture" element={<ArchitecturePage />} />
         </Routes>
       </main>
     </div>
