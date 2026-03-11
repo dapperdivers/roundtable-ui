@@ -58,3 +58,16 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+  notify-cluster:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch image update to dapper-cluster
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.CLUSTER_PAT }}
+          repository: DapperDivers/dapper-cluster
+          event-type: image-update
+          client-payload: '{"image": "roundtable-ui", "tag": "${{ github.sha }}", "repo": "${{ github.repository }}"}'
