@@ -1,0 +1,11 @@
+⚔️ The Round Table Dashboard has been deployed!
+
+Get the application URL:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+  kubectl port-forward svc/{{ include "roundtable-ui.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  Then visit: http://localhost:{{ .Values.service.port }}
+{{- end }}

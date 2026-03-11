@@ -12,6 +12,7 @@ service:
 ingress:
   enabled: false
   className: ""
+  annotations: {}
   hosts:
     - host: roundtable.local
       paths:
@@ -24,6 +25,8 @@ env:
   NAMESPACE: "roundtable"
   FLEET_PREFIX: "fleet-a"
   FLEET_STREAM: "fleet_a_results"
+  # DASHBOARD_API_KEY: ""  # Set to enable authentication
+  # ALLOWED_ORIGINS: ""    # Comma-separated allowed CORS origins
 
 vault:
   enabled: true
