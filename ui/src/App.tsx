@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard } from 'lucide-react'
+import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard, Target } from 'lucide-react'
 import { FleetPage } from './pages/Fleet'
 import { TasksPage } from './pages/Tasks'
 import { BriefingsPage } from './pages/Briefings'
@@ -8,6 +8,7 @@ import { LivePage } from './pages/Live'
 import { ChainsPage } from './pages/Chains'
 import { SessionsPage } from './pages/Sessions'
 import { DashboardPage } from './pages/Dashboard'
+import { MissionsPage } from './pages/Missions'
 import { ToastProvider, useToast } from './components/Toast'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useTaskNotifications } from './hooks/useTaskNotifications'
@@ -22,6 +23,7 @@ function NotificationWatcher() {
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Command Center' },
   { path: '/fleet', icon: Shield, label: 'Fleet' },
+  { path: '/missions', icon: Target, label: 'Missions' },
   { path: '/quests', icon: Scroll, label: 'Quests' },
   { path: '/flow', icon: GitGraph, label: 'Message Flow' },
   { path: '/chains', icon: Link2, label: 'Chains' },
@@ -103,6 +105,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/fleet" element={<FleetPage />} />
+          <Route path="/missions" element={<MissionsPage />} />
           <Route path="/quests" element={<TasksPage />} />
           <Route path="/flow" element={<LivePage />} />
           <Route path="/chronicles" element={<BriefingsPage />} />
