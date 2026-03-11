@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
-import { Target, RefreshCw, Filter } from 'lucide-react'
+import { Target, RefreshCw, Filter, Plus } from 'lucide-react'
 import { useMissions } from '../hooks/useMissions'
 import { MissionCard } from '../components/MissionCard'
 import { MissionPhaseBadge } from '../components/MissionPhaseBadge'
+import { MissionWizard } from './MissionWizard'
 
 const PHASE_FILTERS = [
   'All',
@@ -21,6 +22,7 @@ export function MissionsPage() {
   const { missions, loading, error, refresh } = useMissions()
   const [phaseFilter, setPhaseFilter] = useState('All')
   const [roundTableFilter, setRoundTableFilter] = useState('All')
+  const [showWizard, setShowWizard] = useState(false)
 
   // Extract unique RoundTables
   const roundTables = useMemo(() => {
@@ -55,13 +57,22 @@ export function MissionsPage() {
           <Target className="w-8 h-8 text-roundtable-gold" />
           Missions
         </h1>
-        <button
-          onClick={refresh}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowWizard(true)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-gold/20 border border-roundtable-gold/30 text-roundtable-gold rounded-lg hover:bg-roundtable-gold/30 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            New Mission
+          </button>
+          <button
+            onClick={refresh}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Summary Stats */}
@@ -197,6 +208,14 @@ export function MissionsPage() {
             <MissionCard key={mission.name} mission={mission} />
           ))}
         </div>
+      )}
+
+      {/* Mission Creation Wizard */}
+      {showWizard && (
+        <MissionWizard
+          onClose={() => setShowWizard(false)}
+          onCreated={() => { setShowWizard(false); refresh() }}
+        />
       )}
     </div>
   )
