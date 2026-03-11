@@ -917,7 +917,31 @@ var (
 		Version:  "v1alpha1",
 		Resource: "roundtables",
 	}
+	knightGVR = schema.GroupVersionResource{
+		Group:    "ai.roundtable.io",
+		Version:  "v1alpha1",
+		Resource: "knights",
+	}
 )
+
+// getKnightDomainMap builds a name→domain lookup from Knight CRs.
+func getKnightDomainMap(ctx context.Context, namespace string) map[string]string {
+	m := map[string]string{}
+	if dynClient == nil {
+		return m
+	}
+	list, err := dynClient.Resource(knightGVR).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return m
+	}
+	for _, item := range list.Items {
+		spec, _ := item.Object["spec"].(map[string]interface{})
+		if spec != nil {
+			m[item.GetName()] = getStr(spec, "domain")
+		}
+	}
+	return m
+}
 
 // ChainSummary is the API response for chain list
 type ChainSummary struct {
@@ -957,9 +981,10 @@ func chainsHandler(namespace string) http.HandlerFunc {
 			return
 		}
 
+		knightDomains := getKnightDomainMap(r.Context(), namespace)
 		chains := []ChainSummary{}
 		for _, item := range list.Items {
-			chains = append(chains, parseChainResource(item.Object))
+			chains = append(chains, parseChainResource(item.Object, knightDomains))
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -987,13 +1012,14 @@ func chainDetailHandler(namespace string) http.HandlerFunc {
 			return
 		}
 
-		chain := parseChainResource(obj.Object)
+		knightDomains := getKnightDomainMap(r.Context(), namespace)
+		chain := parseChainResource(obj.Object, knightDomains)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(chain)
 	}
 }
 
-func parseChainResource(obj map[string]interface{}) ChainSummary {
+func parseChainResource(obj map[string]interface{}, knightDomains map[string]string) ChainSummary {
 	spec := getNestedMap(obj, "spec")
 	status := getNestedMap(obj, "status")
 	metadata := getNestedMap(obj, "metadata")
@@ -1004,21 +1030,27 @@ func parseChainResource(obj map[string]interface{}) ChainSummary {
 		Phase:     getStr(status, "phase"),
 	}
 
-	// Schedule from spec
-	if sched := getNestedMap(spec, "schedule"); sched != nil {
-		chain.Schedule = getStr(sched, "cron")
-	}
+	// Schedule from spec (plain cron string in CRD)
+	chain.Schedule = getStr(spec, "schedule")
 
-	// Timing
-	if t := getStr(status, "startTime"); t != "" {
+	// Timing (CRD fields: startedAt, completedAt)
+	if t := getStr(status, "startedAt"); t != "" {
 		chain.StartTime = &t
 	}
-	if t := getStr(status, "completionTime"); t != "" {
+	if t := getStr(status, "completedAt"); t != "" {
 		chain.CompletionTime = &t
 	}
 
 	// Current step
-	chain.CurrentStep = getStr(status, "currentStep")
+	// Derive currentStep from stepStatuses (no CRD field for this)
+	for _, s := range getSlice(status, "stepStatuses") {
+		if sm, ok := s.(map[string]interface{}); ok {
+			if getStr(sm, "phase") == "Running" {
+				chain.CurrentStep = getStr(sm, "name")
+				break
+			}
+		}
+	}
 
 	// Parse spec steps for structure (dependsOn, knight, domain)
 	specSteps := getSlice(spec, "steps")
@@ -1029,8 +1061,8 @@ func parseChainResource(obj map[string]interface{}) ChainSummary {
 		}
 	}
 
-	// Parse status steps
-	statusSteps := getSlice(status, "steps")
+	// Parse status steps (CRD field is "stepStatuses")
+	statusSteps := getSlice(status, "stepStatuses")
 	for _, s := range statusSteps {
 		sm, ok := s.(map[string]interface{})
 		if !ok {
@@ -1040,17 +1072,17 @@ func parseChainResource(obj map[string]interface{}) ChainSummary {
 		step := StepSummary{
 			Name:       stepName,
 			Phase:      getStr(sm, "phase"),
-			RetryCount: getInt(sm, "retryCount"),
+			RetryCount: getInt(sm, "retries"),
 		}
 
-		if t := getStr(sm, "startTime"); t != "" {
+		if t := getStr(sm, "startedAt"); t != "" {
 			step.StartTime = &t
 		}
-		if t := getStr(sm, "completionTime"); t != "" {
+		if t := getStr(sm, "completedAt"); t != "" {
 			step.CompletionTime = &t
 		}
-		if r := getStr(sm, "result"); r != "" {
-			// Truncate result for list view
+		if r := getStr(sm, "output"); r != "" {
+			// Truncate output for list view
 			if len(r) > 500 {
 				truncated := r[:500] + "..."
 				step.Result = &truncated
@@ -1061,8 +1093,12 @@ func parseChainResource(obj map[string]interface{}) ChainSummary {
 
 		// Merge spec info
 		if ss, exists := specStepMap[stepName]; exists {
-			step.Knight = getStr(ss, "knight")
-			step.Domain = getStr(ss, "domain")
+			step.Knight = getStr(ss, "knightRef")
+			if d := getStr(ss, "domain"); d != "" {
+				step.Domain = d
+			} else if step.Knight != "" {
+				step.Domain = knightDomains[step.Knight]
+			}
 			if deps := getSlice(ss, "dependsOn"); deps != nil {
 				for _, d := range deps {
 					if ds, ok := d.(string); ok {
@@ -1082,10 +1118,15 @@ func parseChainResource(obj map[string]interface{}) ChainSummary {
 			if !ok {
 				continue
 			}
+			knightName := getStr(sm, "knightRef")
+			domain := getStr(sm, "domain")
+			if domain == "" && knightName != "" {
+				domain = knightDomains[knightName]
+			}
 			step := StepSummary{
 				Name:   getStr(sm, "name"),
-				Knight: getStr(sm, "knight"),
-				Domain: getStr(sm, "domain"),
+				Knight: knightName,
+				Domain: domain,
 				Phase:  "Pending",
 			}
 			if deps := getSlice(sm, "dependsOn"); deps != nil {

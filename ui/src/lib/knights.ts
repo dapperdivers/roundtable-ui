@@ -15,6 +15,8 @@ export const KNIGHT_CONFIG: Record<string, {
   patsy: { emoji: '🥥', color: 'text-amber-400', title: 'Vault', domain: 'vault' },
   gareth: { emoji: '🌿', color: 'text-emerald-400', title: 'Wellness', domain: 'wellness' },
   lancelot: { emoji: '⚔️', color: 'text-indigo-400', title: 'Career', domain: 'career' },
+  'coder-1': { emoji: '💻', color: 'text-sky-400', title: 'Coder', domain: 'coding' },
+  'coder-2': { emoji: '💻', color: 'text-sky-400', title: 'Coder', domain: 'coding' },
 }
 
 export function getKnightConfig(name: string) {
