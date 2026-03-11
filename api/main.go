@@ -72,9 +72,9 @@ type KnightStatus struct {
 	Labels    map[string]string `json:"labels"`
 }
 
-// TaskEvent represents a NATS task/result event
+// TaskEvent represents a NATS task/result/mission/chain event
 type TaskEvent struct {
-	Type      string          `json:"type"` // task, result
+	Type      string          `json:"type"` // task, result, mission, chain
 	Subject   string          `json:"subject"`
 	Data      json.RawMessage `json:"data"`
 	Timestamp time.Time       `json:"timestamp"`
@@ -771,11 +771,61 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 			return
 		}
 
+		// Subscribe to mission status events (#75)
+		missionSub, err := nc.Subscribe(fleetPrefix+".missions.>", func(msg *nats.Msg) {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			event := TaskEvent{
+				Type:      "mission",
+				Subject:   msg.Subject,
+				Data:      msg.Data,
+				Timestamp: time.Now(),
+			}
+			data, _ := json.Marshal(event)
+			safeWrite(data)
+		})
+		if err != nil {
+			log.Printf("NATS mission sub error: %v", err)
+			// Non-fatal: missions subject may not exist yet
+			missionSub = nil
+		}
+
+		// Subscribe to chain progress events (#75)
+		chainSub, err := nc.Subscribe(fleetPrefix+".chains.>", func(msg *nats.Msg) {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			event := TaskEvent{
+				Type:      "chain",
+				Subject:   msg.Subject,
+				Data:      msg.Data,
+				Timestamp: time.Now(),
+			}
+			data, _ := json.Marshal(event)
+			safeWrite(data)
+		})
+		if err != nil {
+			log.Printf("NATS chain sub error: %v", err)
+			// Non-fatal
+			chainSub = nil
+		}
+
 		// Cleanup on exit
 		defer func() {
 			close(done)
 			taskSub.Unsubscribe()
 			resultSub.Unsubscribe()
+			if missionSub != nil {
+				missionSub.Unsubscribe()
+			}
+			if chainSub != nil {
+				chainSub.Unsubscribe()
+			}
 			writeMu.Lock()
 			closed = true
 			writeMu.Unlock()
