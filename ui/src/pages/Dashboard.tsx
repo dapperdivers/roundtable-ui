@@ -1,3 +1,4 @@
+import { authFetch } from '../lib/auth'
 import { useState, useEffect, useMemo } from 'react'
 import { Crown, Activity, DollarSign, Zap, AlertTriangle, Link2, ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -23,14 +24,14 @@ export function DashboardPage() {
   const [sessionCosts, setSessionCosts] = useState<{ total: number; perKnight: Record<string, number> }>({ total: 0, perKnight: {} })
 
   useEffect(() => {
-    fetch('/api/chains').then(r => r.json()).then(setChains).catch(() => {})
+    authFetch('/api/chains').then(r => r.json()).then(setChains).catch(() => {})
   }, [])
 
   // Fetch cumulative session costs from each knight on load
   useEffect(() => {
     (async () => {
       try {
-        const fleetRes = await fetch('/api/fleet')
+        const fleetRes = await authFetch('/api/fleet')
         const fleetData = await fleetRes.json()
         const names: string[] = (fleetData || []).map((k: any) => k.name)
 

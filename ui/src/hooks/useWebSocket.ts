@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { getApiKey, authFetch } from '../lib/auth'
 
 export interface NatsEvent {
   type: 'task' | 'result'
@@ -35,7 +36,9 @@ export function useWebSocket() {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`)
+    const apiKey = getApiKey()
+    const wsUrl = `${protocol}//${window.location.host}/api/ws${apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : ''}`
+    const ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
       if (!mountedRef.current) return
@@ -81,7 +84,7 @@ export function useWebSocket() {
     mountedRef.current = true
 
     // Load historical events so there's always something to show
-    fetch('/api/tasks')
+    authFetch('/api/tasks')
       .then((r) => r.json())
       .then((data) => {
         if (!mountedRef.current) return

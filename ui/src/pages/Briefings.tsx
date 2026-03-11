@@ -1,3 +1,4 @@
+import { authFetch } from '../lib/auth'
 import { useState, useEffect } from 'react'
 import { BookOpen, Calendar, FileText } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -9,7 +10,7 @@ export function BriefingsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/briefings')
+    authFetch('/api/briefings')
       .then((r) => r.json())
       .then((data) => {
         setBriefings(data.sort().reverse())

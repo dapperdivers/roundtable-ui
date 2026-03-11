@@ -80,6 +80,65 @@ type TaskEvent struct {
 	Timestamp time.Time       `json:"timestamp"`
 }
 
+// authMiddleware checks the DASHBOARD_API_KEY env var for API-key based auth (#68, #65)
+func authMiddleware(next http.Handler) http.Handler {
+	apiKey := os.Getenv("DASHBOARD_API_KEY")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If no API key is configured, auth is disabled (local dev)
+		if apiKey == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Skip auth for health endpoint and static files
+		if r.URL.Path == "/api/health" || !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Auth endpoint: POST /api/auth/login validates the key and returns success
+		if r.URL.Path == "/api/auth/login" && r.Method == "POST" {
+			var body struct {
+				ApiKey string `json:"apiKey"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+				http.Error(w, "Invalid request", http.StatusBadRequest)
+				return
+			}
+			if body.ApiKey != apiKey {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Invalid API key"})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"authenticated": true,
+				"message":       "Welcome to the Round Table",
+			})
+			return
+		}
+
+		// Check Authorization header
+		auth := r.Header.Get("Authorization")
+		if auth == "" {
+			// Also check query param for WebSocket connections
+			if qKey := r.URL.Query().Get("api_key"); qKey != "" {
+				auth = "Bearer " + qKey
+			}
+		}
+
+		if !strings.HasPrefix(auth, "Bearer ") || strings.TrimPrefix(auth, "Bearer ") != apiKey {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 // rateLimiter is a simple sliding-window rate limiter (#12)
 type rateLimiterT struct {
 	mu       sync.Mutex
@@ -163,8 +222,14 @@ func main() {
 
 	// Router
 	r := mux.NewRouter()
+	r.Use(authMiddleware)
 	r.Use(rateLimiter.middleware)
 	api := r.PathPrefix("/api").Subrouter()
+
+	// Auth endpoint (handled in middleware, but register route for documentation)
+	api.HandleFunc("/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		// Handled by authMiddleware
+	}).Methods("POST")
 
 	// Fleet endpoints
 	api.HandleFunc("/fleet", fleetHandler(namespace)).Methods("GET")
@@ -216,7 +281,7 @@ func main() {
 	// CORS — defaults to same-origin (no origins = same-origin only) (#57)
 	corsOpts := cors.Options{
 		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: false,
 	}
 	if origins := envOr("ALLOWED_ORIGINS", ""); origins != "" {

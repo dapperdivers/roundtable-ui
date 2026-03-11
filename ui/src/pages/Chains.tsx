@@ -1,3 +1,4 @@
+import { authFetch } from '../lib/auth'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { RefreshCw, ChevronDown, ChevronRight, Clock, Pause, Play } from 'lucide-react'
 import { getKnightConfig } from '../lib/knights'
@@ -273,7 +274,7 @@ export function ChainsPage() {
     abortRef.current = controller
 
     setLoading(true)
-    fetch('/api/chains', { signal: controller.signal })
+    authFetch('/api/chains', { signal: controller.signal })
       .then(r => r.json())
       .then((data: ChainRun[]) => { if (!controller.signal.aborted) setChains(data) })
       .catch((e) => { if (e.name !== 'AbortError') setChains([]) })

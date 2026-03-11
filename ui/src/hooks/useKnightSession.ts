@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { authFetch } from '../lib/auth'
 
 export interface KnightSessionStats {
   knight: string
@@ -54,7 +55,7 @@ export function useKnightSession() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/fleet/${knight}/session?type=stats`)
+      const res = await authFetch(`/api/fleet/${knight}/session?type=stats`)
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
       const data = await res.json()
       setStats(data)
@@ -67,7 +68,7 @@ export function useKnightSession() {
 
   const fetchRecent = useCallback(async (knight: string, limit = 20) => {
     try {
-      const res = await fetch(`/api/fleet/${knight}/session?type=recent&limit=${limit}`)
+      const res = await authFetch(`/api/fleet/${knight}/session?type=recent&limit=${limit}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setRecent(data.entries || [])
@@ -78,7 +79,7 @@ export function useKnightSession() {
 
   const fetchTree = useCallback(async (knight: string) => {
     try {
-      const res = await fetch(`/api/fleet/${knight}/session?type=tree`)
+      const res = await authFetch(`/api/fleet/${knight}/session?type=tree`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setTree(data.nodes || [])
