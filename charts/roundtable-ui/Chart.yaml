@@ -1,6 +1,0 @@
-apiVersion: v2
-name: roundtable-ui
-description: The Round Table — AI Agent Fleet Observability Platform
-version: 0.2.0
-appVersion: "2.0.0"
-type: application
