@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard, Target } from 'lucide-react'
+import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard, Target, DollarSign } from 'lucide-react'
 import { FleetPage } from './pages/Fleet'
 import { TasksPage } from './pages/Tasks'
 import { BriefingsPage } from './pages/Briefings'
@@ -9,6 +9,7 @@ import { ChainsPage } from './pages/Chains'
 import { SessionsPage } from './pages/Sessions'
 import { DashboardPage } from './pages/Dashboard'
 import { MissionsPage } from './pages/Missions'
+import { CostDashboardPage } from './pages/CostDashboard'
 import { ToastProvider, useToast } from './components/Toast'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useTaskNotifications } from './hooks/useTaskNotifications'
@@ -27,6 +28,7 @@ const navItems = [
   { path: '/quests', icon: Scroll, label: 'Quests' },
   { path: '/flow', icon: GitGraph, label: 'Message Flow' },
   { path: '/chains', icon: Link2, label: 'Chains' },
+  { path: '/costs', icon: DollarSign, label: 'Costs' },
   { path: '/sessions', icon: TreePine, label: 'Sessions' },
   { path: '/chronicles', icon: BookOpen, label: 'Chronicles' },
 ]
@@ -110,6 +112,7 @@ export default function App() {
           <Route path="/flow" element={<LivePage />} />
           <Route path="/chronicles" element={<BriefingsPage />} />
           <Route path="/chains" element={<ChainsPage />} />
+          <Route path="/costs" element={<CostDashboardPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
         </Routes>
       </main>
