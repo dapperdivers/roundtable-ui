@@ -1,3 +1,4 @@
+import { authFetch } from '../lib/auth'
 import { useState, useEffect } from 'react'
 import { Scroll, Clock, History, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
 import { getKnightConfig, KNIGHT_CONFIG, knightNameForDomain } from '../lib/knights'
@@ -29,7 +30,7 @@ export function TasksPage() {
 
   // Fetch fleet configuration from backend (#60)
   useEffect(() => {
-    fetch('/api/config')
+    authFetch('/api/config')
       .then((r) => r.json())
       .then((data) => {
         if (data.fleetPrefix) setFleetPrefix(data.fleetPrefix)
@@ -39,7 +40,7 @@ export function TasksPage() {
 
   const loadHistory = () => {
     setHistoryLoading(true)
-    fetch('/api/tasks')
+    authFetch('/api/tasks')
       .then((r) => r.json())
       .then((data) => {
         setHistory(data.results || data.tasks || data || [])
@@ -56,7 +57,7 @@ export function TasksPage() {
 
     try {
       const domain = KNIGHT_CONFIG[knight]?.domain || knight
-      const res = await fetch('/api/tasks/dispatch', {
+      const res = await authFetch('/api/tasks/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ knight, domain, task }),

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { authFetch } from '../lib/auth'
 
 export interface Mission {
   name: string
@@ -23,7 +24,7 @@ export function useMissions(refreshInterval = 10000) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/missions')
+      const res = await authFetch('/api/missions')
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setMissions(data)

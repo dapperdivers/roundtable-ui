@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { authFetch } from '../lib/auth'
 
 export interface Knight {
   name: string
@@ -20,7 +21,7 @@ export function useFleet(refreshInterval = 10000) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/fleet')
+      const res = await authFetch('/api/fleet')
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setKnights(data)
