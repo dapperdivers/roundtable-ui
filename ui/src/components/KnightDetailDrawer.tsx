@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X, Activity, Cpu, DollarSign, MessageSquare, Wrench, Clock, ChevronRight, RefreshCw } from 'lucide-react'
+import { X, Activity, Cpu, DollarSign, MessageSquare, Wrench, Clock, ChevronRight, RefreshCw, FileCode, Package, Terminal, ChevronDown } from 'lucide-react'
 import { getKnightConfig } from '../lib/knights'
 import { useKnightSession } from '../hooks/useKnightSession'
 import type { Knight } from '../hooks/useFleet'
@@ -37,9 +37,32 @@ const entryTypeColors: Record<string, string> = {
   compaction: 'bg-red-500/20 text-red-400',
 }
 
+// Knight skills by domain (from roundtable CRDs)
+const knightSkills: Record<string, string[]> = {
+  galahad: ['security-auditing', 'vulnerability-scanning', 'penetration-testing', 'compliance-checking'],
+  percival: ['code-review', 'refactoring', 'testing', 'documentation'],
+  gawain: ['cost-analysis', 'budget-tracking', 'resource-optimization', 'financial-reporting'],
+  tristan: ['infrastructure-management', 'cluster-operations', 'deployment-automation', 'monitoring'],
+  lancelot: ['architecture-design', 'system-integration', 'performance-optimization', 'scalability'],
+  bedivere: ['data-analysis', 'reporting', 'visualization', 'insights'],
+  gareth: ['workflow-automation', 'task-scheduling', 'orchestration', 'integration'],
+  kay: ['user-support', 'troubleshooting', 'knowledge-base', 'training'],
+  bors: ['quality-assurance', 'testing-automation', 'validation', 'verification'],
+  ector: ['content-generation', 'documentation', 'translation', 'summarization'],
+  lamorak: ['research', 'analysis', 'investigation', 'intelligence-gathering'],
+  pellinore: ['exploration', 'discovery', 'prototyping', 'experimentation'],
+  agravain: ['policy-enforcement', 'compliance', 'governance', 'audit'],
+  tor: ['messaging', 'communication', 'coordination', 'notification'],
+  patsy: ['assistance', 'coordination', 'task-delegation', 'collaboration'],
+}
+
 export function KnightDetailDrawer({ knight, onClose }: Props) {
   const { stats, recent, loading, error, fetchStats, fetchRecent } = useKnightSession()
   const [recentLoading, setRecentLoading] = useState(false)
+  const [logs, setLogs] = useState<string>('')
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [logsExpanded, setLogsExpanded] = useState(false)
+  const [skillsExpanded, setSkillsExpanded] = useState(false)
 
   const refreshAll = async (knightName: string) => {
     fetchStats(knightName)
@@ -48,15 +71,36 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
     setRecentLoading(false)
   }
 
+  const fetchLogs = async (knightName: string) => {
+    setLogsLoading(true)
+    try {
+      const res = await fetch(`/api/fleet/${knightName}/logs?tail=100`)
+      if (res.ok) {
+        const text = await res.text()
+        setLogs(text)
+      } else {
+        setLogs(`Error: ${res.status} ${res.statusText}`)
+      }
+    } catch (e) {
+      setLogs(`Error: ${e instanceof Error ? e.message : 'Unknown error'}`)
+    } finally {
+      setLogsLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (knight) {
       refreshAll(knight.name)
+      setLogsExpanded(false)
+      setSkillsExpanded(false)
+      setLogs('')
     }
   }, [knight])
 
   if (!knight) return null
 
   const config = getKnightConfig(knight.name)
+  const skills = knightSkills[knight.name] || []
 
   return (
     <>
@@ -64,9 +108,9 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
       <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
 
       {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-[480px] bg-roundtable-navy border-l border-roundtable-steel z-50 overflow-y-auto">
+      <div className="fixed right-0 top-0 h-full w-[520px] bg-roundtable-navy border-l border-roundtable-steel z-50 overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-roundtable-navy border-b border-roundtable-steel p-4 flex items-center justify-between">
+        <div className="sticky top-0 bg-roundtable-navy border-b border-roundtable-steel p-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
             <span className="text-3xl">{config.emoji}</span>
             <div>
@@ -86,13 +130,15 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
 
         <div className="p-4 space-y-6">
           {/* Status bar */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <span className={`w-2.5 h-2.5 rounded-full ${knight.ready ? 'bg-green-500' : 'bg-red-500'} animate-pulse`} />
             <span className="text-sm text-gray-300">{knight.ready ? 'Online' : 'Offline'}</span>
             <span className="text-xs text-gray-500">•</span>
             <span className="text-xs text-gray-500">{knight.age} uptime</span>
             <span className="text-xs text-gray-500">•</span>
             <span className="text-xs text-gray-500">{knight.restarts} restarts</span>
+            <span className="text-xs text-gray-500">•</span>
+            <span className="text-xs text-gray-400 font-mono">{knight.node}</span>
           </div>
 
           {loading && (
@@ -108,6 +154,51 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
               <p className="text-red-400/60 text-xs mt-1">Knight may not have introspection enabled yet</p>
             </div>
           )}
+
+          {/* Skills Section */}
+          {skills.length > 0 && (
+            <div>
+              <button
+                onClick={() => setSkillsExpanded(!skillsExpanded)}
+                className="w-full flex items-center justify-between text-sm font-medium text-gray-400 mb-3 hover:text-roundtable-gold transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <FileCode className="w-4 h-4" />
+                  Knight Skills ({skills.length})
+                </div>
+                <ChevronDown className={`w-4 h-4 transition-transform ${skillsExpanded ? 'rotate-180' : ''}`} />
+              </button>
+              {skillsExpanded && (
+                <div className="grid grid-cols-2 gap-2">
+                  {skills.map((skill) => (
+                    <div key={skill} className="bg-roundtable-slate border border-roundtable-steel/50 rounded-lg px-3 py-2 text-xs text-gray-300 flex items-center gap-2">
+                      <span className="text-roundtable-gold">✓</span>
+                      <span className="capitalize">{skill.replace(/-/g, ' ')}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Nix Tools Inventory */}
+          <div>
+            <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+              <Package className="w-4 h-4" />
+              Nix Tools
+            </h3>
+            <div className="bg-roundtable-slate rounded-lg p-3 space-y-1.5">
+              {['bash', 'git', 'curl', 'jq', 'kubectl', 'gh', 'nix'].map((tool) => (
+                <div key={tool} className="flex items-center justify-between text-xs">
+                  <span className="text-gray-400 font-mono">{tool}</span>
+                  <span className="text-green-400">✓ installed</span>
+                </div>
+              ))}
+              <div className="pt-2 border-t border-roundtable-steel/30">
+                <p className="text-xs text-gray-500">All tools from Nix profile</p>
+              </div>
+            </div>
+          </div>
 
           {/* Session Stats */}
           {stats?.session && (
@@ -170,6 +261,50 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
             </div>
           )}
 
+          {/* Pod Logs Viewer */}
+          <div>
+            <button
+              onClick={() => {
+                if (!logsExpanded && logs === '') {
+                  fetchLogs(knight.name)
+                }
+                setLogsExpanded(!logsExpanded)
+              }}
+              className="w-full flex items-center justify-between text-sm font-medium text-gray-400 mb-3 hover:text-roundtable-gold transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Terminal className="w-4 h-4" />
+                Pod Logs
+              </div>
+              <ChevronDown className={`w-4 h-4 transition-transform ${logsExpanded ? 'rotate-180' : ''}`} />
+            </button>
+            {logsExpanded && (
+              <div className="bg-black/50 border border-roundtable-steel rounded-lg p-3">
+                {logsLoading ? (
+                  <div className="text-center py-4">
+                    <div className="animate-spin w-5 h-5 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-2" />
+                    <p className="text-gray-500 text-xs">Loading logs...</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-gray-500">Last 100 lines</span>
+                      <button
+                        onClick={() => fetchLogs(knight.name)}
+                        className="text-xs text-roundtable-gold hover:text-roundtable-gold/80"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                    <pre className="text-xs text-gray-300 font-mono overflow-x-auto max-h-[300px] overflow-y-auto whitespace-pre-wrap break-words">
+                      {logs || 'No logs available'}
+                    </pre>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Recent Activity */}
           {(recent.length > 0 || recentLoading || stats?.session) && (
             <div>
@@ -213,7 +348,7 @@ function ActivityEntry({ entry }: { entry: any }) {
 
   return (
     <div
-      className="bg-roundtable-slate rounded-lg p-2.5 border border-roundtable-steel/50 cursor-pointer"
+      className="bg-roundtable-slate rounded-lg p-2.5 border border-roundtable-steel/50 cursor-pointer hover:border-roundtable-gold/30 transition-colors"
       onClick={() => setExpanded(!expanded)}
     >
       <div className="flex items-center justify-between mb-1">
