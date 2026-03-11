@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard, Target, DollarSign, LogOut } from 'lucide-react'
+import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard, Target, DollarSign, LogOut, Crown } from 'lucide-react'
 import { FleetPage } from './pages/Fleet'
 import { TasksPage } from './pages/Tasks'
 import { BriefingsPage } from './pages/Briefings'
@@ -11,6 +11,7 @@ import { DashboardPage } from './pages/Dashboard'
 import { MissionsPage } from './pages/Missions'
 import { CostDashboardPage } from './pages/CostDashboard'
 import { LoginPage } from './pages/Login'
+import { RoundTablesPage } from './pages/RoundTables'
 import { ToastProvider, useToast } from './components/Toast'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useTaskNotifications } from './hooks/useTaskNotifications'
@@ -27,6 +28,7 @@ const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Command Center' },
   { path: '/fleet', icon: Shield, label: 'Fleet' },
   { path: '/missions', icon: Target, label: 'Missions' },
+  { path: '/roundtables', icon: Crown, label: 'Round Tables' },
   { path: '/quests', icon: Scroll, label: 'Quests' },
   { path: '/flow', icon: GitGraph, label: 'Message Flow' },
   { path: '/chains', icon: Link2, label: 'Chains' },
@@ -168,6 +170,7 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/fleet" element={<FleetPage />} />
           <Route path="/missions" element={<MissionsPage />} />
+          <Route path="/roundtables" element={<RoundTablesPage />} />
           <Route path="/quests" element={<TasksPage />} />
           <Route path="/flow" element={<LivePage />} />
           <Route path="/chronicles" element={<BriefingsPage />} />
