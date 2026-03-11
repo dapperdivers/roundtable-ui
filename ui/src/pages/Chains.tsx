@@ -282,7 +282,7 @@ export function ChainsPage() {
 
   useEffect(() => { fetchChains() }, [fetchChains])
 
-  // Auto-enable when any chain is Running, auto-disable when all done
+  // Auto-enable when any chain is Running, auto-disable when all done (#Bug #2: re-enable when chains start)
   useEffect(() => {
     if (chains.length === 0) return
     const hasRunning = chains.some(c => c.phase === 'Running' || c.phase === 'StepRunning')
@@ -291,6 +291,8 @@ export function ChainsPage() {
       autoRefreshInitialized.current = true
     } else if (!hasRunning && autoRefresh) {
       setAutoRefresh(false)
+    } else if (hasRunning && !autoRefresh) {
+      setAutoRefresh(true)
     }
   }, [chains, autoRefresh])
 
