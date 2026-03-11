@@ -23,6 +23,7 @@ import (
 	"github.com/rs/cors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -179,6 +180,16 @@ func main() {
 	api.HandleFunc("/chains", chainsHandler(namespace)).Methods("GET")
 	api.HandleFunc("/chains/{name}", chainDetailHandler(namespace)).Methods("GET")
 
+	// Mission endpoints
+	api.HandleFunc("/missions", missionsHandler(namespace)).Methods("GET")
+	api.HandleFunc("/missions/{name}", missionDetailHandler(namespace)).Methods("GET")
+	api.HandleFunc("/missions", missionCreateHandler(namespace)).Methods("POST")
+	api.HandleFunc("/missions/{name}", missionDeleteHandler(namespace)).Methods("DELETE")
+
+	// RoundTable endpoints
+	api.HandleFunc("/roundtables", roundTablesHandler(namespace)).Methods("GET")
+	api.HandleFunc("/roundtables/{name}", roundTableDetailHandler(namespace)).Methods("GET")
+
 	// Briefing endpoints
 	api.HandleFunc("/briefings", briefingListHandler(vaultPath)).Methods("GET")
 	api.HandleFunc("/briefings/{date}", briefingHandler(vaultPath)).Methods("GET")
@@ -204,7 +215,7 @@ func main() {
 
 	// CORS — defaults to same-origin (no origins = same-origin only) (#57)
 	corsOpts := cors.Options{
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type"},
 		AllowCredentials: false,
 	}
@@ -769,11 +780,23 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 	}
 }
 
-var chainGVR = schema.GroupVersionResource{
-	Group:    "ai.roundtable.io",
-	Version:  "v1alpha1",
-	Resource: "chains",
-}
+var (
+	chainGVR = schema.GroupVersionResource{
+		Group:    "ai.roundtable.io",
+		Version:  "v1alpha1",
+		Resource: "chains",
+	}
+	missionGVR = schema.GroupVersionResource{
+		Group:    "ai.roundtable.io",
+		Version:  "v1alpha1",
+		Resource: "missions",
+	}
+	roundTableGVR = schema.GroupVersionResource{
+		Group:    "ai.roundtable.io",
+		Version:  "v1alpha1",
+		Resource: "roundtables",
+	}
+)
 
 // ChainSummary is the API response for chain list
 type ChainSummary struct {
@@ -956,6 +979,296 @@ func parseChainResource(obj map[string]interface{}) ChainSummary {
 	}
 
 	return chain
+}
+
+// MissionSummary is the API response for mission list
+type MissionSummary struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	Phase          string   `json:"phase"`
+	Objective      string   `json:"objective"`
+	StartedAt      *string  `json:"startedAt"`
+	ExpiresAt      *string  `json:"expiresAt"`
+	Knights        []string `json:"knights"`
+	Chains         []string `json:"chains"`
+	CostBudgetUSD  string   `json:"costBudgetUSD"`
+	TotalCost      string   `json:"totalCost"`
+	TTL            int      `json:"ttl"`
+	Timeout        int      `json:"timeout"`
+	RoundTableRef  string   `json:"roundTableRef"`
+}
+
+func missionsHandler(namespace string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dynClient == nil {
+			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		list, err := dynClient.Resource(missionGVR).Namespace(namespace).List(r.Context(), metav1.ListOptions{})
+		if err != nil {
+			log.Printf("Mission list error: %v", err)
+			http.Error(w, "Failed to list missions", http.StatusInternalServerError)
+			return
+		}
+
+		missions := []MissionSummary{}
+		for _, item := range list.Items {
+			missions = append(missions, parseMissionResource(item.Object))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(missions)
+	}
+}
+
+func missionDetailHandler(namespace string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dynClient == nil {
+			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		vars := mux.Vars(r)
+		name := vars["name"]
+		if !validKnightName.MatchString(name) {
+			http.Error(w, "Invalid mission name", http.StatusBadRequest)
+			return
+		}
+
+		obj, err := dynClient.Resource(missionGVR).Namespace(namespace).Get(r.Context(), name, metav1.GetOptions{})
+		if err != nil {
+			http.Error(w, "Mission not found", http.StatusNotFound)
+			return
+		}
+
+		mission := parseMissionResource(obj.Object)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mission)
+	}
+}
+
+func missionCreateHandler(namespace string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dynClient == nil {
+			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		// Parse request body
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&reqBody); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// Validate required fields
+		name, ok := reqBody["name"].(string)
+		if !ok || !validKnightName.MatchString(name) {
+			http.Error(w, "Invalid mission name", http.StatusBadRequest)
+			return
+		}
+
+		// Build mission object
+		mission := map[string]interface{}{
+			"apiVersion": "ai.roundtable.io/v1alpha1",
+			"kind":       "Mission",
+			"metadata": map[string]interface{}{
+				"name":      name,
+				"namespace": namespace,
+			},
+			"spec": reqBody,
+		}
+
+		// Create via dynamic client
+		obj, err := dynClient.Resource(missionGVR).Namespace(namespace).Create(
+			r.Context(),
+			&unstructured.Unstructured{Object: mission},
+			metav1.CreateOptions{},
+		)
+		if err != nil {
+			log.Printf("Mission create error: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to create mission: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"name":      obj.GetName(),
+			"namespace": obj.GetNamespace(),
+			"created":   true,
+			"uid":       obj.GetUID(),
+		})
+	}
+}
+
+func missionDeleteHandler(namespace string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dynClient == nil {
+			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		vars := mux.Vars(r)
+		name := vars["name"]
+		if !validKnightName.MatchString(name) {
+			http.Error(w, "Invalid mission name", http.StatusBadRequest)
+			return
+		}
+
+		err := dynClient.Resource(missionGVR).Namespace(namespace).Delete(r.Context(), name, metav1.DeleteOptions{})
+		if err != nil {
+			log.Printf("Mission delete error: %v", err)
+			http.Error(w, "Failed to delete mission", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"name":    name,
+			"deleted": true,
+		})
+	}
+}
+
+func parseMissionResource(obj map[string]interface{}) MissionSummary {
+	spec := getNestedMap(obj, "spec")
+	status := getNestedMap(obj, "status")
+	metadata := getNestedMap(obj, "metadata")
+
+	mission := MissionSummary{
+		Name:          getStr(metadata, "name"),
+		Namespace:     getStr(metadata, "namespace"),
+		Phase:         getStr(status, "phase"),
+		Objective:     getStr(spec, "objective"),
+		CostBudgetUSD: getStr(spec, "costBudgetUSD"),
+		TotalCost:     getStr(status, "totalCost"),
+		TTL:           getInt(spec, "ttl"),
+		Timeout:       getInt(spec, "timeout"),
+		RoundTableRef: getStr(spec, "roundTableRef"),
+	}
+
+	// Parse timing
+	if t := getStr(status, "startedAt"); t != "" {
+		mission.StartedAt = &t
+	}
+	if t := getStr(status, "expiresAt"); t != "" {
+		mission.ExpiresAt = &t
+	}
+
+	// Parse knights array
+	if knights := getSlice(spec, "knights"); knights != nil {
+		for _, k := range knights {
+			if km, ok := k.(map[string]interface{}); ok {
+				if name := getStr(km, "name"); name != "" {
+					mission.Knights = append(mission.Knights, name)
+				}
+			}
+		}
+	}
+
+	// Parse chains array
+	if chains := getSlice(spec, "chains"); chains != nil {
+		for _, c := range chains {
+			if cm, ok := c.(map[string]interface{}); ok {
+				if name := getStr(cm, "name"); name != "" {
+					mission.Chains = append(mission.Chains, name)
+				}
+			}
+		}
+	}
+
+	return mission
+}
+
+// RoundTableSummary is the API response for roundtable list
+type RoundTableSummary struct {
+	Name          string `json:"name"`
+	Namespace     string `json:"namespace"`
+	Phase         string `json:"phase"`
+	KnightsReady  int    `json:"knightsReady"`
+	KnightsTotal  int    `json:"knightsTotal"`
+	NATSPrefix    string `json:"natsPrefix"`
+	CostBudgetUSD string `json:"costBudgetUSD"`
+	TotalCost     string `json:"totalCost"`
+}
+
+func roundTablesHandler(namespace string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dynClient == nil {
+			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		list, err := dynClient.Resource(roundTableGVR).Namespace(namespace).List(r.Context(), metav1.ListOptions{})
+		if err != nil {
+			log.Printf("RoundTable list error: %v", err)
+			http.Error(w, "Failed to list roundtables", http.StatusInternalServerError)
+			return
+		}
+
+		roundTables := []RoundTableSummary{}
+		for _, item := range list.Items {
+			roundTables = append(roundTables, parseRoundTableResource(item.Object))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(roundTables)
+	}
+}
+
+func roundTableDetailHandler(namespace string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dynClient == nil {
+			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
+			return
+		}
+
+		vars := mux.Vars(r)
+		name := vars["name"]
+		if !validKnightName.MatchString(name) {
+			http.Error(w, "Invalid roundtable name", http.StatusBadRequest)
+			return
+		}
+
+		obj, err := dynClient.Resource(roundTableGVR).Namespace(namespace).Get(r.Context(), name, metav1.GetOptions{})
+		if err != nil {
+			http.Error(w, "RoundTable not found", http.StatusNotFound)
+			return
+		}
+
+		roundTable := parseRoundTableResource(obj.Object)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(roundTable)
+	}
+}
+
+func parseRoundTableResource(obj map[string]interface{}) RoundTableSummary {
+	spec := getNestedMap(obj, "spec")
+	status := getNestedMap(obj, "status")
+	metadata := getNestedMap(obj, "metadata")
+
+	rt := RoundTableSummary{
+		Name:         getStr(metadata, "name"),
+		Namespace:    getStr(metadata, "namespace"),
+		Phase:        getStr(status, "phase"),
+		KnightsReady: getInt(status, "knightsReady"),
+		KnightsTotal: getInt(status, "knightsTotal"),
+		TotalCost:    getStr(status, "totalCost"),
+	}
+
+	// Parse NATS config
+	if nats := getNestedMap(spec, "nats"); nats != nil {
+		rt.NATSPrefix = getStr(nats, "subjectPrefix")
+	}
+
+	// Parse policies
+	if policies := getNestedMap(spec, "policies"); policies != nil {
+		rt.CostBudgetUSD = getStr(policies, "costBudgetUSD")
+	}
+
+	return rt
 }
 
 // Helper functions for unstructured K8s objects
