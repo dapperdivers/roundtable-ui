@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { getApiKey, authFetch } from '../lib/auth'
 
 export interface NatsEvent {
-  type: 'task' | 'result'
+  type: 'task' | 'result' | 'mission' | 'chain'
   subject: string
   data: unknown
   timestamp: string
@@ -90,7 +90,7 @@ export function useWebSocket() {
         if (!mountedRef.current) return
         const historical: NatsEvent[] = (data.results || [])
           .map((r: { type?: string; subject?: string; data?: unknown; timestamp?: string }) => ({
-            type: (r.type || 'result') as 'task' | 'result',
+            type: (r.type || 'result') as NatsEvent['type'],
             subject: r.subject || '',
             data: r.data,
             timestamp: r.timestamp || new Date().toISOString(),
