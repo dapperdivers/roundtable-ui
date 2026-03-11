@@ -251,6 +251,12 @@ func main() {
 	api.HandleFunc("/missions", missionCreateHandler(namespace)).Methods("POST")
 	api.HandleFunc("/missions/{name}", missionDeleteHandler(namespace)).Methods("DELETE")
 
+	// KV endpoints (NATS KV store)
+	api.HandleFunc("/missions/{name}/results", missionResultsHandler()).Methods("GET")
+	api.HandleFunc("/chains/{name}/steps/{step}/output", chainStepOutputHandler()).Methods("GET")
+	api.HandleFunc("/kv/{bucket}/keys", kvKeysHandler()).Methods("GET")
+	api.HandleFunc("/kv/{bucket}/{key}", kvGetHandler()).Methods("GET")
+
 	// RoundTable endpoints
 	api.HandleFunc("/roundtables", roundTablesHandler(namespace)).Methods("GET")
 	api.HandleFunc("/roundtables/{name}", roundTableDetailHandler(namespace)).Methods("GET")
@@ -1384,6 +1390,124 @@ func parseRoundTableResource(obj map[string]interface{}) RoundTableSummary {
 	}
 
 	return rt
+}
+
+// --- NATS KV helpers and handlers ---
+
+// getOrCreateKVBucket returns a NATS KV bucket handle, creating it if needed.
+func getOrCreateKVBucket(ctx context.Context, bucket string) (jetstream.KeyValue, error) {
+	kv, err := js.KeyValue(ctx, bucket)
+	if err != nil {
+		// Try to create it
+		kv, err = js.CreateKeyValue(ctx, jetstream.KeyValueConfig{
+			Bucket:      bucket,
+			Description: fmt.Sprintf("Round Table %s store", bucket),
+			History:     3,
+			TTL:         30 * 24 * time.Hour,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("KV bucket %s: %w", bucket, err)
+		}
+	}
+	return kv, nil
+}
+
+// validBucketName matches safe KV bucket names
+var validBucketName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,62}$`)
+
+func missionResultsHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := mux.Vars(r)["name"]
+		if !validKnightName.MatchString(name) {
+			http.Error(w, "Invalid mission name", http.StatusBadRequest)
+			return
+		}
+		kv, err := getOrCreateKVBucket(r.Context(), "mission-results")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		entry, err := kv.Get(r.Context(), name)
+		if err != nil {
+			http.Error(w, "Results not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(entry.Value())
+	}
+}
+
+func chainStepOutputHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		name := vars["name"]
+		step := vars["step"]
+		if !validKnightName.MatchString(name) || !validKnightName.MatchString(step) {
+			http.Error(w, "Invalid name", http.StatusBadRequest)
+			return
+		}
+		kv, err := getOrCreateKVBucket(r.Context(), "chain-outputs")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		key := name + "." + step
+		entry, err := kv.Get(r.Context(), key)
+		if err != nil {
+			http.Error(w, "Output not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(entry.Value())
+	}
+}
+
+func kvKeysHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		bucket := mux.Vars(r)["bucket"]
+		if !validBucketName.MatchString(bucket) {
+			http.Error(w, "Invalid bucket name", http.StatusBadRequest)
+			return
+		}
+		kv, err := getOrCreateKVBucket(r.Context(), bucket)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		keys, err := kv.Keys(r.Context())
+		if err != nil {
+			// No keys found
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]string{})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(keys)
+	}
+}
+
+func kvGetHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		bucket := vars["bucket"]
+		key := vars["key"]
+		if !validBucketName.MatchString(bucket) {
+			http.Error(w, "Invalid bucket name", http.StatusBadRequest)
+			return
+		}
+		kv, err := getOrCreateKVBucket(r.Context(), bucket)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		entry, err := kv.Get(r.Context(), key)
+		if err != nil {
+			http.Error(w, "Key not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(entry.Value())
+	}
 }
 
 // Helper functions for unstructured K8s objects

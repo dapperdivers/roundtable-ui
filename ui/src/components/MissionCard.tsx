@@ -1,4 +1,6 @@
-import { Target, Clock, Users, Link2, DollarSign } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Target, Clock, Users, Link2, DollarSign, FileText } from 'lucide-react'
+import { authFetch } from '../lib/auth'
 import type { Mission } from '../hooks/useMissions'
 import { MissionPhaseBadge } from './MissionPhaseBadge'
 import { getKnightConfig } from '../lib/knights'
@@ -33,7 +35,31 @@ function formatDuration(start: string | null, end: string | null): string {
   return `${hours}h ${mins}m`
 }
 
+function MissionResults({ name }: { name: string }) {
+  const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    authFetch(`/api/missions/${name}/results`)
+      .then(r => { if (!r.ok) throw new Error('Not found'); return r.json() })
+      .then(d => setData(d))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [name])
+
+  if (loading) return <p className="text-xs text-gray-500 py-2">Loading results...</p>
+  if (error) return <p className="text-xs text-gray-500 py-2">No results stored yet</p>
+
+  return (
+    <pre className="text-xs text-gray-300 whitespace-pre-wrap max-h-64 overflow-auto bg-roundtable-navy rounded p-3 border border-roundtable-gold/20">
+      {JSON.stringify(data, null, 2)}
+    </pre>
+  )
+}
+
 export function MissionCard({ mission, onClick }: MissionCardProps) {
+  const [showResults, setShowResults] = useState(false)
   const isComplete = mission.phase === 'Succeeded' || mission.phase === 'Failed' || mission.phase === 'Expired'
   
   // Calculate budget usage percentage
@@ -117,10 +143,27 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
         <span className="text-xs text-gray-500">
           RoundTable: <span className="text-gray-400">{mission.roundTableRef}</span>
         </span>
-        <span className="text-xs text-gray-600 group-hover:text-roundtable-gold/60 transition-colors">
-          view details →
-        </span>
+        <div className="flex items-center gap-2">
+          {isComplete && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowResults(r => !r) }}
+              className="flex items-center gap-1 text-xs text-roundtable-gold/60 hover:text-roundtable-gold transition-colors"
+            >
+              <FileText className="w-3 h-3" />
+              {showResults ? 'hide results' : 'results'}
+            </button>
+          )}
+          <span className="text-xs text-gray-600 group-hover:text-roundtable-gold/60 transition-colors">
+            view details →
+          </span>
+        </div>
       </div>
+
+      {showResults && (
+        <div className="mt-3 pt-3 border-t border-roundtable-steel/50">
+          <MissionResults name={mission.name} />
+        </div>
+      )}
     </div>
   )
 }

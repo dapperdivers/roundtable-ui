@@ -172,7 +172,42 @@ function StepDAG({ steps, currentStep }: { steps: ChainStep[]; currentStep: stri
   )
 }
 
-function StepDetail({ step }: { step: ChainStep }) {
+function StepKVOutput({ chainName, stepName }: { chainName: string; stepName: string }) {
+  const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setLoading(true)
+    setError('')
+    authFetch(`/api/chains/${chainName}/steps/${stepName}/output`)
+      .then(r => { if (!r.ok) throw new Error('Not found'); return r.json() })
+      .then(d => setData(d))
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false))
+  }, [chainName, stepName])
+
+  if (loading) return <p className="text-xs text-gray-500 mt-2">Loading full output from KV...</p>
+  if (error) return null // No KV data yet, that's fine
+  if (!data) return null
+
+  const output = (data.output as string) || ''
+  const duration = (data.duration as string) || ''
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-xs text-roundtable-gold uppercase font-semibold">📦 Full Output (NATS KV)</span>
+        {duration && <span className="text-xs text-gray-500">⏱ {duration}</span>}
+      </div>
+      <pre className="text-xs text-gray-300 whitespace-pre-wrap max-h-96 overflow-auto bg-roundtable-navy rounded p-3 border border-roundtable-gold/20">
+        {output}
+      </pre>
+    </div>
+  )
+}
+
+function StepDetail({ step, chainName }: { step: ChainStep; chainName: string }) {
   const cfg = getKnightConfig(step.knight)
   return (
     <div className="bg-roundtable-navy border border-roundtable-steel rounded-lg p-4 mt-2">
@@ -194,11 +229,14 @@ function StepDetail({ step }: { step: ChainStep }) {
       </div>
       {step.result && (
         <div>
-          <span className="text-xs text-gray-500 uppercase">Result</span>
+          <span className="text-xs text-gray-500 uppercase">Result (truncated)</span>
           <pre className="text-xs text-gray-400 whitespace-pre-wrap max-h-64 overflow-auto mt-1 bg-roundtable-slate rounded p-3 border border-roundtable-steel/50">
             {step.result}
           </pre>
         </div>
+      )}
+      {(step.phase === 'Completed' || step.phase === 'Succeeded') && chainName && (
+        <StepKVOutput chainName={chainName} stepName={step.name} />
       )}
     </div>
   )
@@ -252,7 +290,7 @@ function ChainCard({ chain }: { chain: ChainRun }) {
               )
             })}
           </div>
-          {activeStep && <StepDetail step={activeStep} />}
+          {activeStep && <StepDetail step={activeStep} chainName={chain.name} />}
         </div>
       )}
     </div>
