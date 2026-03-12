@@ -1250,9 +1250,40 @@ func missionCreateHandler(namespace string) http.HandlerFunc {
 
 		// Validate required fields
 		name, ok := reqBody["name"].(string)
-		if !ok || !validKnightName.MatchString(name) {
+		if !ok || !validK8sName.MatchString(name) {
 			http.Error(w, "Invalid mission name", http.StatusBadRequest)
 			return
+		}
+
+		// Validate objective
+		objective, _ := reqBody["objective"].(string)
+		if len(objective) == 0 || len(objective) > 1000 {
+			http.Error(w, "Objective required (1-1000 chars)", http.StatusBadRequest)
+			return
+		}
+
+		// Validate TTL if provided (60-604800 seconds)
+		if ttl, ok := reqBody["ttl"].(float64); ok {
+			if ttl < 60 || ttl > 604800 {
+				http.Error(w, "TTL must be 60-604800 seconds", http.StatusBadRequest)
+				return
+			}
+		}
+
+		// Validate timeout if provided (60-86400 seconds)
+		if timeout, ok := reqBody["timeout"].(float64); ok {
+			if timeout < 60 || timeout > 86400 {
+				http.Error(w, "Timeout must be 60-86400 seconds", http.StatusBadRequest)
+				return
+			}
+		}
+
+		// Validate cleanupPolicy if provided
+		if policy, ok := reqBody["cleanupPolicy"].(string); ok {
+			if policy != "Delete" && policy != "Retain" {
+				http.Error(w, "cleanupPolicy must be Delete or Retain", http.StatusBadRequest)
+				return
+			}
 		}
 
 		// Build mission object
