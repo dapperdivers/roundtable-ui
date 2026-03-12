@@ -242,8 +242,8 @@ export function CostDashboardPage() {
           ) : (
             <div className="space-y-2">
               {dailyCosts.map(({ date, cost }) => {
-                const maxCost = Math.max(...dailyCosts.map(d => d.cost))
-                const barWidth = (cost / maxCost) * 100
+                const maxCost = Math.max(...dailyCosts.map(d => d.cost), 1)
+                const barWidth = maxCost > 0 ? (cost / maxCost) * 100 : 0
                 return (
                   <div key={date} className="space-y-1">
                     <div className="flex items-center justify-between text-sm">

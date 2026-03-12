@@ -65,7 +65,7 @@ export function ArchitecturePage() {
       <div className="mt-6 bg-roundtable-slate border border-roundtable-steel rounded-xl p-6">
         <h2 className="text-lg font-bold text-white mb-4">Tech Stack</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div><h4 className="text-gray-400 mb-1">Frontend</h4><p className="text-white">React 19 + TypeScript</p><p className="text-gray-500">Vite, Tailwind CSS</p></div>
+          <div><h4 className="text-gray-400 mb-1">Frontend</h4><p className="text-white">React 18 + TypeScript</p><p className="text-gray-500">Vite, Tailwind CSS</p></div>
           <div><h4 className="text-gray-400 mb-1">API</h4><p className="text-white">Go 1.23</p><p className="text-gray-500">Gorilla Mux, WebSocket</p></div>
           <div><h4 className="text-gray-400 mb-1">Messaging</h4><p className="text-white">NATS + JetStream</p><p className="text-gray-500">Pub/Sub, persistence</p></div>
           <div><h4 className="text-gray-400 mb-1">Orchestration</h4><p className="text-white">Kubernetes CRDs</p><p className="text-gray-500">Custom operator</p></div>

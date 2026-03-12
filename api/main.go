@@ -80,6 +80,12 @@ type TaskEvent struct {
 	Timestamp time.Time       `json:"timestamp"`
 }
 
+// validK8sName validates Kubernetes resource names to prevent label selector injection.
+var validK8sName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// validSessionTypes is the whitelist of allowed session type query parameters.
+var validSessionTypes = map[string]bool{"stats": true, "recent": true, "tree": true}
+
 // authMiddleware checks the DASHBOARD_API_KEY env var for API-key based auth (#68, #65)
 func authMiddleware(next http.Handler) http.Handler {
 	apiKey := os.Getenv("DASHBOARD_API_KEY")
@@ -318,6 +324,10 @@ func main() {
 }
 
 func buildKnightStatus(pod corev1.Pod) KnightStatus {
+	labels := pod.Labels
+	if labels == nil {
+		labels = map[string]string{}
+	}
 	status := "offline"
 	var restarts int32
 	ready := false
@@ -332,8 +342,8 @@ func buildKnightStatus(pod corev1.Pod) KnightStatus {
 		}
 	}
 	ks := KnightStatus{
-		Name:     pod.Labels["app.kubernetes.io/instance"],
-		Domain:   pod.Labels["roundtable.io/domain"],
+		Name:     labels["app.kubernetes.io/instance"],
+		Domain:   labels["roundtable.io/domain"],
 		Status:   status,
 		Ready:    ready,
 		Restarts: restarts,
@@ -408,6 +418,11 @@ func knightHandler(namespace string) http.HandlerFunc {
 		vars := mux.Vars(r)
 		name := vars["knight"]
 
+		if !validK8sName.MatchString(name) {
+			http.Error(w, "Invalid knight name", http.StatusBadRequest)
+			return
+		}
+
 		if k8sClient == nil {
 			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
 			return
@@ -464,6 +479,11 @@ func knightLogsHandler(namespace string) http.HandlerFunc {
 		name := vars["knight"]
 		lines := int64(100)
 
+		if !validK8sName.MatchString(name) {
+			http.Error(w, "Invalid knight name", http.StatusBadRequest)
+			return
+		}
+
 		if k8sClient == nil {
 			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
 			return
@@ -515,6 +535,10 @@ func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 		reqType := r.URL.Query().Get("type")
 		if reqType == "" {
 			reqType = "stats"
+		}
+		if !validSessionTypes[reqType] {
+			http.Error(w, "Invalid session type (allowed: stats, recent, tree)", http.StatusBadRequest)
+			return
 		}
 
 		if nc == nil {
