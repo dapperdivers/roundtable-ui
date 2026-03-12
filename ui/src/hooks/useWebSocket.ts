@@ -17,6 +17,11 @@ function jitter(ms: number): number {
   return ms * (0.75 + Math.random() * 0.5)
 }
 
+/** Generate a dedup key from an event's subject + timestamp */
+function eventKey(e: NatsEvent): string {
+  return `${e.subject}:${e.timestamp}`
+}
+
 export function useWebSocket() {
   const [events, setEvents] = useState<NatsEvent[]>([])
   const [connected, setConnected] = useState(false)
@@ -25,6 +30,7 @@ export function useWebSocket() {
   const reconnectDelay = useRef(RECONNECT_DELAY_MS)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
+  const seenEvents = useRef(new Set<string>())
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return
@@ -66,8 +72,15 @@ export function useWebSocket() {
       if (!mountedRef.current) return
       try {
         const event: NatsEvent = JSON.parse(e.data)
+        const key = eventKey(event)
+        if (seenEvents.current.has(key)) return // deduplicate
+        seenEvents.current.add(key)
+        // Prevent unbounded growth of seen set
+        if (seenEvents.current.size > MAX_EVENTS * 2) {
+          const entries = Array.from(seenEvents.current)
+          seenEvents.current = new Set(entries.slice(entries.length - MAX_EVENTS))
+        }
         setEvents((prev) => {
-          // Prevent unbounded growth — cap at MAX_EVENTS
           const next = [event, ...prev]
           return next.length > MAX_EVENTS ? next.slice(0, MAX_EVENTS) : next
         })
@@ -98,9 +111,15 @@ export function useWebSocket() {
           .reverse() // newest first
           .slice(0, MAX_EVENTS)
         if (historical.length > 0) {
+          // Track historical event keys for dedup
+          for (const h of historical) {
+            seenEvents.current.add(eventKey(h))
+          }
           setEvents((prev) => {
-            // Merge: live events take priority, then fill with history
-            const merged = [...prev, ...historical]
+            // Merge: live events take priority, dedup against history
+            const existingKeys = new Set(prev.map(eventKey))
+            const newHistory = historical.filter((h: NatsEvent) => !existingKeys.has(eventKey(h)))
+            const merged = [...prev, ...newHistory]
             return merged.slice(0, MAX_EVENTS)
           })
         }
@@ -124,7 +143,10 @@ export function useWebSocket() {
     }
   }, [])
 
-  const clearEvents = useCallback(() => setEvents([]), [])
+  const clearEvents = useCallback(() => {
+    setEvents([])
+    seenEvents.current.clear()
+  }, [])
 
   return { events, connected, error, dispatch, clearEvents }
 }
