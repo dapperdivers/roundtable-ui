@@ -127,7 +127,7 @@ export function DashboardPage() {
         <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">🏰 Fleet</h2>
-            <Link to="/" className="text-xs text-roundtable-gold hover:underline flex items-center gap-1">
+            <Link to="/fleet" className="text-xs text-roundtable-gold hover:underline flex items-center gap-1">
               View all <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
