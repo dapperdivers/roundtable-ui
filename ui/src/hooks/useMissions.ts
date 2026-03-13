@@ -1,6 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import { authFetch } from '../lib/auth'
 
+export interface PlanningResult {
+  completedAt: string
+  chainsGenerated: number
+  knightsGenerated: number
+  skillsGenerated: number
+  error?: string
+  rawOutput?: string
+  reasoning?: string
+}
+
 export interface Mission {
   name: string
   namespace: string
@@ -15,6 +25,8 @@ export interface Mission {
   ttl: number
   timeout: number
   roundTableRef: string
+  metaMission?: boolean
+  planningResult?: PlanningResult
 }
 
 export function useMissions(refreshInterval = 10000) {

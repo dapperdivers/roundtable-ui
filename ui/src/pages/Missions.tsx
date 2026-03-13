@@ -9,6 +9,7 @@ const PHASE_FILTERS = [
   'All',
   'Pending',
   'Provisioning',
+  'Planning',
   'Assembling',
   'Briefing',
   'Active',
