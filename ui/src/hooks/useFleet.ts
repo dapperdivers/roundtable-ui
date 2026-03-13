@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { authFetch } from '../lib/auth'
 
+export interface GeneratedSkill {
+  name: string
+  content: string
+}
+
 export interface Knight {
   name: string
   domain: string
@@ -12,6 +17,8 @@ export interface Knight {
   skills: number
   nixTools: number
   labels: Record<string, string>
+  nixPackages?: string[]
+  generatedSkills?: GeneratedSkill[]
 }
 
 export function useFleet(refreshInterval = 10000) {

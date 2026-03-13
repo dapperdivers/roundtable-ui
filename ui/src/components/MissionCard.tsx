@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Target, Clock, Users, Link2, DollarSign, FileText } from 'lucide-react'
+import { Target, Clock, Users, Link2, DollarSign, FileText, Brain, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { authFetch } from '../lib/auth'
 import type { Mission } from '../hooks/useMissions'
 import { MissionPhaseBadge } from './MissionPhaseBadge'
@@ -60,7 +60,9 @@ function MissionResults({ name }: { name: string }) {
 
 export function MissionCard({ mission, onClick }: MissionCardProps) {
   const [showResults, setShowResults] = useState(false)
+  const [showPlanOutput, setShowPlanOutput] = useState(false)
   const isComplete = mission.phase === 'Succeeded' || mission.phase === 'Failed' || mission.phase === 'Expired'
+  const isPlanning = mission.phase === 'Planning'
   
   // Calculate budget usage percentage
   const budget = parseFloat(mission.costBudgetUSD) || 0
@@ -77,12 +79,108 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
         <div className="flex items-center gap-3">
           <Target className="w-5 h-5 text-roundtable-gold" />
           <div>
-            <h3 className="font-bold text-white">{mission.name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-white">{mission.name}</h3>
+              {mission.metaMission && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                  <Brain className="w-3 h-3" />
+                  Meta
+                </span>
+              )}
+            </div>
             <p className="text-sm text-gray-400 line-clamp-1">{mission.objective}</p>
           </div>
         </div>
         <MissionPhaseBadge phase={mission.phase} />
       </div>
+
+      {/* Planning Status - show spinner while planning */}
+      {isPlanning && (
+        <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-xs text-amber-400">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="font-medium">Planner generating execution plan...</span>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">
+            The AI planner is reasoning about chains, knights, tools, and skills needed.
+          </p>
+        </div>
+      )}
+
+      {/* Planning Results - show after planning completes */}
+      {mission.planningResult && !isPlanning && (
+        <div className="mb-3">
+          <div className="bg-roundtable-navy/50 border border-indigo-500/30 rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Brain className="w-4 h-4 text-indigo-400" />
+              <span className="text-xs font-medium text-indigo-400">Planning Complete</span>
+            </div>
+            
+            {/* Resource counts */}
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              <div className="bg-roundtable-navy rounded p-2">
+                <div className="text-xs text-gray-500">Chains</div>
+                <div className="text-sm font-bold text-white">
+                  {mission.planningResult.chainsGenerated}
+                </div>
+              </div>
+              <div className="bg-roundtable-navy rounded p-2">
+                <div className="text-xs text-gray-500">Knights</div>
+                <div className="text-sm font-bold text-white">
+                  {mission.planningResult.knightsGenerated}
+                </div>
+              </div>
+              <div className="bg-roundtable-navy rounded p-2">
+                <div className="text-xs text-gray-500">Skills</div>
+                <div className="text-sm font-bold text-white">
+                  {mission.planningResult.skillsGenerated}
+                </div>
+              </div>
+            </div>
+
+            {/* Reasoning */}
+            {mission.planningResult.reasoning && (
+              <div className="bg-roundtable-navy rounded p-2 mb-2">
+                <div className="text-xs text-gray-400 mb-1">Planner Reasoning:</div>
+                <p className="text-xs text-gray-300">
+                  {mission.planningResult.reasoning}
+                </p>
+              </div>
+            )}
+
+            {/* Error */}
+            {mission.planningResult.error && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded p-2 mb-2">
+                <div className="text-xs text-red-400">
+                  Planning Error: {mission.planningResult.error}
+                </div>
+              </div>
+            )}
+
+            {/* View Plan Output */}
+            {mission.planningResult.rawOutput && (
+              <div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowPlanOutput(!showPlanOutput) }}
+                  className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                >
+                  {showPlanOutput ? (
+                    <ChevronUp className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                  {showPlanOutput ? 'Hide' : 'View'} Generated Plan (JSON)
+                </button>
+                {showPlanOutput && (
+                  <pre className="mt-2 text-xs text-gray-300 whitespace-pre-wrap max-h-64 overflow-auto bg-roundtable-navy rounded p-2 border border-indigo-500/30">
+                    {JSON.stringify(JSON.parse(mission.planningResult.rawOutput), null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 mb-3">
         {/* Knights */}

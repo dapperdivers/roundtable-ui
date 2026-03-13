@@ -1,6 +1,7 @@
 const phaseColors: Record<string, string> = {
   Pending: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
   Provisioning: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  Planning: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
   Assembling: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
   Briefing: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
   Active: 'bg-blue-500/20 text-blue-400 border-blue-500/30',

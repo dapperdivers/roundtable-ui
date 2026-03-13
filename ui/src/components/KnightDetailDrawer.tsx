@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { X, Activity, Cpu, DollarSign, MessageSquare, Wrench, Clock, ChevronRight, RefreshCw, FileCode, Package, Terminal, ChevronDown } from 'lucide-react'
 import { getKnightConfig } from '../lib/knights'
 import { useKnightSession } from '../hooks/useKnightSession'
-import type { Knight } from '../hooks/useFleet'
+import { authFetch } from '../lib/auth'
+import type { Knight, GeneratedSkill } from '../hooks/useFleet'
 
 interface Props {
   knight: Knight | null
@@ -63,9 +64,27 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
   const [logsLoading, setLogsLoading] = useState(false)
   const [logsExpanded, setLogsExpanded] = useState(false)
   const [skillsExpanded, setSkillsExpanded] = useState(false)
+  const [knightDetail, setKnightDetail] = useState<Knight | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  const fetchKnightDetail = async (knightName: string) => {
+    setDetailLoading(true)
+    try {
+      const res = await authFetch(`/api/fleet/${knightName}`)
+      if (res.ok) {
+        const data = await res.json()
+        setKnightDetail(data)
+      }
+    } catch (e) {
+      console.error('Failed to fetch knight detail:', e)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
 
   const refreshAll = async (knightName: string) => {
     fetchStats(knightName)
+    fetchKnightDetail(knightName)
     setRecentLoading(true)
     await fetchRecent(knightName, 30)
     setRecentLoading(false)
@@ -181,24 +200,49 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
             </div>
           )}
 
-          {/* Nix Tools Inventory */}
-          <div>
-            <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
-              <Package className="w-4 h-4" />
-              Nix Tools
-            </h3>
-            <div className="bg-roundtable-slate rounded-lg p-3 space-y-1.5">
-              {['bash', 'git', 'curl', 'jq', 'kubectl', 'gh', 'nix'].map((tool) => (
-                <div key={tool} className="flex items-center justify-between text-xs">
-                  <span className="text-gray-400 font-mono">{tool}</span>
-                  <span className="text-green-400">✓ installed</span>
-                </div>
-              ))}
-              <div className="pt-2 border-t border-roundtable-steel/30">
-                <p className="text-xs text-gray-500">All tools from Nix profile</p>
+          {/* Nix Packages */}
+          {knightDetail?.nixPackages && knightDetail.nixPackages.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                <Package className="w-4 h-4" />
+                Nix Packages ({knightDetail.nixPackages.length})
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {knightDetail.nixPackages.map((pkg) => (
+                  <span
+                    key={pkg}
+                    className="inline-flex items-center px-2.5 py-1 bg-roundtable-slate border border-roundtable-steel/50 rounded-lg text-xs text-gray-300 font-mono"
+                  >
+                    {pkg}
+                  </span>
+                ))}
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Generated Skills */}
+          {knightDetail?.generatedSkills && knightDetail.generatedSkills.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                <FileCode className="w-4 h-4" />
+                Generated Skills ({knightDetail.generatedSkills.length})
+              </h3>
+              <div className="space-y-2">
+                {knightDetail.generatedSkills.map((skill) => (
+                  <details key={skill.name} className="bg-roundtable-slate border border-roundtable-steel/50 rounded-lg">
+                    <summary className="px-3 py-2 cursor-pointer text-xs text-gray-300 hover:text-roundtable-gold transition-colors">
+                      {skill.name}
+                    </summary>
+                    <div className="px-3 pb-3">
+                      <pre className="text-xs text-gray-400 whitespace-pre-wrap overflow-x-auto max-h-64">
+                        {skill.content}
+                      </pre>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Session Stats */}
           {stats?.session && (

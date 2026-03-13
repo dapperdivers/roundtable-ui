@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Target, Plus, X, ArrowLeft, Rocket } from 'lucide-react'
+import { Target, Plus, X, ArrowLeft, Rocket, Brain } from 'lucide-react'
 import { authFetch } from '../lib/auth'
 
 interface MissionForm {
@@ -10,6 +10,7 @@ interface MissionForm {
   ttl: number
   timeout: number
   knights: { name: string; role: string }[]
+  metaMission: boolean
 }
 
 const INITIAL_FORM: MissionForm = {
@@ -20,6 +21,7 @@ const INITIAL_FORM: MissionForm = {
   ttl: 3600,
   timeout: 300,
   knights: [{ name: '', role: '' }],
+  metaMission: false,
 }
 
 interface MissionWizardProps {
@@ -63,7 +65,8 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
         costBudgetUSD: form.costBudgetUSD,
         ttl: form.ttl,
         timeout: form.timeout,
-        knights: form.knights.filter(k => k.name.trim()),
+        knights: form.metaMission ? [] : form.knights.filter(k => k.name.trim()),
+        metaMission: form.metaMission,
       }
       const res = await authFetch('/api/missions', {
         method: 'POST',
@@ -83,7 +86,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
 
   const steps = [
     { title: 'Basics', valid: form.name.trim() && form.objective.trim() },
-    { title: 'Knights', valid: form.knights.some(k => k.name.trim()) },
+    { title: 'Knights', valid: form.metaMission || form.knights.some(k => k.name.trim()) },
     { title: 'Review', valid: true },
   ]
 
@@ -152,6 +155,24 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
                   className="w-full px-3 py-2 bg-roundtable-navy border border-roundtable-steel rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-roundtable-gold/50"
                 />
               </div>
+              <div>
+                <div className="flex items-center gap-2 p-3 bg-roundtable-navy/50 border border-roundtable-steel rounded-lg">
+                  <input
+                    type="checkbox"
+                    id="metaMission"
+                    checked={form.metaMission}
+                    onChange={e => updateField('metaMission', e.target.checked)}
+                    className="w-4 h-4 rounded border-roundtable-steel bg-roundtable-navy text-indigo-500 focus:ring-indigo-500"
+                  />
+                  <label htmlFor="metaMission" className="text-sm text-gray-300 flex items-center gap-2">
+                    <Brain className="w-4 h-4 text-indigo-400" />
+                    Meta-Mission (let planner generate execution plan)
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                  When enabled, a planner knight will automatically generate chains and knights from your objective.
+                </p>
+              </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm text-gray-300 mb-1">Cost Budget (USD)</label>
@@ -183,7 +204,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
             </>
           )}
 
-          {step === 1 && (
+          {step === 1 && !form.metaMission && (
             <>
               <p className="text-sm text-gray-400">Assign knights to this mission:</p>
               {form.knights.map((knight, idx) => (
@@ -214,6 +235,18 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
                 <Plus className="w-4 h-4" /> Add Knight
               </button>
             </>
+          )}
+
+          {step === 1 && form.metaMission && (
+            <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
+              <div className="flex items-center gap-2 text-indigo-400 mb-2">
+                <Brain className="w-5 h-5" />
+                <span className="font-medium">Meta-mission mode enabled</span>
+              </div>
+              <p className="text-sm text-gray-400">
+                The planner will analyze your objective and generate the necessary knights, skills, and execution chains.
+              </p>
+            </div>
           )}
 
           {step === 2 && (
