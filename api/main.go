@@ -403,6 +403,23 @@ func fleetHandler(namespace string) http.HandlerFunc {
 			knights = append(knights, buildKnightStatus(pod))
 		}
 
+		// Deduplicate: prefer Running/Ready pod when multiple pods share a knight name
+		// This handles old ReplicaSet pods from rollouts that cause duplicate entries
+		seen := make(map[string]int) // name → index in deduped slice
+		deduped := make([]KnightStatus, 0, len(knights))
+		for _, k := range knights {
+			if idx, exists := seen[k.Name]; exists {
+				// Keep the one that's online/ready
+				if k.Status == "online" && deduped[idx].Status != "online" {
+					deduped[idx] = k
+				}
+			} else {
+				seen[k.Name] = len(deduped)
+				deduped = append(deduped, k)
+			}
+		}
+		knights = deduped
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(knights)
 	}
