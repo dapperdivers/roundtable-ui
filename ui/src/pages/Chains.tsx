@@ -13,6 +13,9 @@ interface ChainStep {
   result: string | null
   dependsOn: string[] | null
   retryCount: number
+  continueOnFailure?: boolean
+  outputPath?: string
+  maxRetries?: number
 }
 
 interface ChainRun {
@@ -24,14 +27,28 @@ interface ChainRun {
   completionTime: string | null
   steps: ChainStep[] | null
   schedule?: string
+  description?: string
+  timeout?: number
+  input?: string
+  outputKnight?: string
+  roundTableRef?: string
+  missionRef?: string
+  suspended?: boolean
+  runsCompleted?: number
+  runsFailed?: number
 }
 
 const phaseColors: Record<string, string> = {
+  // Chain phases
+  Idle: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
   Pending: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
   Running: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
   StepRunning: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  Completed: 'bg-green-500/20 text-green-400 border-green-500/30',
+  Succeeded: 'bg-green-500/20 text-green-400 border-green-500/30',
+  Completed: 'bg-green-500/20 text-green-400 border-green-500/30', // Legacy alias
+  PartiallySucceeded: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   Failed: 'bg-red-500/20 text-red-400 border-red-500/30',
+  Suspended: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
   Skipped: 'bg-gray-500/20 text-gray-500 border-gray-500/30',
 }
 
@@ -138,8 +155,9 @@ function StepDAG({ steps, currentStep }: { steps: ChainStep[]; currentStep: stri
           const cfg = getKnightConfig(step.knight)
           const isRunning = step.phase === 'Running' || step.name === currentStep
           const isSkipped = step.phase === 'Skipped'
-          const borderColor = step.phase === 'Completed' ? '#22c55e'
+          const borderColor = (step.phase === 'Completed' || step.phase === 'Succeeded') ? '#22c55e'
             : step.phase === 'Failed' ? '#ef4444'
+            : step.phase === 'PartiallySucceeded' ? '#eab308'
             : isRunning ? '#3b82f6'
             : '#4b5563'
 
@@ -215,6 +233,11 @@ function StepDetail({ step, chainName }: { step: ChainStep; chainName: string })
         <span className="text-lg">{cfg.emoji}</span>
         <span className="font-semibold text-white capitalize">{step.name}</span>
         <PhaseBadge phase={step.phase} />
+        {step.continueOnFailure && (
+          <span className="text-xs font-medium px-2 py-0.5 rounded-full border bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+            soft fail
+          </span>
+        )}
         <span className="text-xs text-gray-500 ml-auto">{formatDuration(step.startTime, step.completionTime)}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 text-sm mb-3">
@@ -223,8 +246,20 @@ function StepDetail({ step, chainName }: { step: ChainStep; chainName: string })
         {step.dependsOn && step.dependsOn.length > 0 && (
           <div className="col-span-2"><span className="text-gray-500">Depends on:</span> <span className="text-gray-300">{step.dependsOn.join(', ')}</span></div>
         )}
-        {step.retryCount > 0 && (
-          <div><span className="text-gray-500">Retries:</span> <span className="text-yellow-400">{step.retryCount}</span></div>
+        {(step.retryCount > 0 || step.maxRetries) && (
+          <div>
+            <span className="text-gray-500">Retries:</span> 
+            <span className="text-yellow-400 ml-1">
+              {step.retryCount > 0 ? `${step.retryCount}` : '0'}
+              {step.maxRetries ? `/${step.maxRetries}` : ''}
+            </span>
+          </div>
+        )}
+        {step.outputPath && (
+          <div className="col-span-2">
+            <span className="text-gray-500">📁 Output path:</span> 
+            <span className="text-gray-300 ml-1 font-mono text-xs">{step.outputPath}</span>
+          </div>
         )}
       </div>
       {step.result && (
@@ -261,8 +296,16 @@ function ChainCard({ chain }: { chain: ChainRun }) {
           : <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />}
         <span className="font-semibold text-white">{chain.name}</span>
         <PhaseBadge phase={chain.phase} />
+        {chain.suspended && (
+          <span className="text-xs font-medium px-2 py-0.5 rounded-full border bg-red-500/20 text-red-400 border-red-500/30">
+            ⏸ suspended
+          </span>
+        )}
         {chain.schedule && (
           <span className="text-xs text-gray-500 font-mono">{chain.schedule}</span>
+        )}
+        {chain.timeout && (
+          <span className="text-xs text-gray-500">⏱ {chain.timeout}s timeout</span>
         )}
         <span className="text-xs text-gray-500">{(chain.steps || []).length} steps</span>
         <span className="ml-auto flex items-center gap-1 text-xs text-gray-500">
@@ -272,6 +315,46 @@ function ChainCard({ chain }: { chain: ChainRun }) {
       </button>
       {expanded && (
         <div className="px-5 pb-4 border-t border-roundtable-steel/50">
+          {/* Description */}
+          {chain.description && (
+            <div className="mt-3 mb-2">
+              <span className="text-xs text-gray-500 uppercase font-semibold">Description</span>
+              <p className="text-sm text-gray-300 mt-1">{chain.description}</p>
+            </div>
+          )}
+          
+          {/* Metadata grid */}
+          <div className="grid grid-cols-2 gap-3 text-sm mt-3 mb-3">
+            {chain.missionRef && (
+              <div>
+                <span className="text-gray-500">Mission:</span> 
+                <a href={`/missions/${chain.missionRef}`} className="text-blue-400 hover:text-blue-300 ml-1">
+                  {chain.missionRef}
+                </a>
+              </div>
+            )}
+            {chain.roundTableRef && (
+              <div>
+                <span className="text-gray-500">Round Table:</span> 
+                <a href={`/roundtables/${chain.roundTableRef}`} className="text-blue-400 hover:text-blue-300 ml-1">
+                  {chain.roundTableRef}
+                </a>
+              </div>
+            )}
+            {chain.outputKnight && (
+              <div>
+                <span className="text-gray-500">Output Knight:</span> 
+                <span className="text-gray-300 ml-1">{chain.outputKnight}</span>
+              </div>
+            )}
+            {(chain.runsCompleted !== undefined || chain.runsFailed !== undefined) && (
+              <div>
+                <span className="text-gray-500">Run History:</span> 
+                <span className="text-green-400 ml-1">{chain.runsCompleted || 0} ✓</span>
+                <span className="text-red-400 ml-1">{chain.runsFailed || 0} ✗</span>
+              </div>
+            )}
+          </div>
           <StepDAG steps={chain.steps || []} currentStep={chain.currentStep} />
           {/* Step list for drill-down (#49) */}
           <div className="mt-3 flex flex-wrap gap-2">
