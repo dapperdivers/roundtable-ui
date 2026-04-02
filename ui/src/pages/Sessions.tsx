@@ -439,7 +439,7 @@ export function SessionsPage() {
       {loading && (
         <div className="text-center py-12">
           <div className="animate-spin w-8 h-8 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-gray-400">Querying {config.emoji} {selectedKnight}...</p>
+          <p className="text-gray-400">Querying {config?.emoji} {selectedKnight}...</p>
         </div>
       )}
 

@@ -1,6 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { authFetch } from '../lib/auth'
 
+export interface KnightCondition {
+  type: string
+  status: string
+  reason?: string
+  message?: string
+  lastTransitionTime?: string
+}
+
 export interface GeneratedSkill {
   name: string
   content: string
@@ -30,6 +38,7 @@ export interface Knight {
   totalCost?: string
   concurrency?: number
   taskTimeout?: number
+  conditions?: KnightCondition[]
 }
 
 export function useFleet(refreshInterval = 10000) {
