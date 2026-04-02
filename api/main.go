@@ -303,6 +303,7 @@ func main() {
 
 	// Health
 	api.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}).Methods("GET")
 
@@ -651,7 +652,7 @@ func taskHistoryHandler(fleetPrefix, streamName string) http.HandlerFunc {
 			return
 		}
 
-		msgs, _ := cons.Fetch(limit)
+		msgs, _ := cons.Fetch(limit, jetstream.FetchMaxWait(5*time.Second))
 		if msgs != nil {
 			for msg := range msgs.Messages() {
 				results = append(results, TaskEvent{
