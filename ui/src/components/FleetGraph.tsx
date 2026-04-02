@@ -13,8 +13,9 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { KNIGHT_CONFIG, KNIGHT_NAMES, getKnightConfig, knightNameForDomain } from '../lib/knights'
+import { buildKnightConfigFromFleet, getKnightConfig, knightNameForDomain } from '../lib/knights'
 import type { NatsEvent } from '../hooks/useWebSocket'
+import type { Knight } from '../hooks/useFleet'
 
 // --- Heat color mapping ---
 function heatColor(level: number): string {
@@ -258,20 +259,25 @@ function buildEdges(
 
 // --- Main Component ---
 interface FleetGraphProps {
+  knights: Knight[]
   events: NatsEvent[]
   connected: boolean
   knightStatuses?: Record<string, string>
   onKnightClick?: (knightName: string) => void
 }
 
-export function FleetGraph({ events, connected, knightStatuses = {}, onKnightClick }: FleetGraphProps) {
+export function FleetGraph({ knights, events, connected, knightStatuses = {}, onKnightClick }: FleetGraphProps) {
   const lastLayoutRef = useRef<string>('')
+
+  // Build dynamic knight config and names from fleet data
+  const knightConfig = useMemo(() => buildKnightConfigFromFleet(knights), [knights])
+  const knightNames = useMemo(() => knights.map(k => k.name), [knights])
 
   // Compute activity from events
   const activity = useMemo(() => {
     const act: Record<string, { heat: number; recentTasks: number; busy: boolean; status: string; pendingTasks: Set<string> }> = {}
 
-    for (const name of KNIGHT_NAMES) {
+    for (const name of knightNames) {
       act[name] = {
         heat: 0,
         recentTasks: 0,
@@ -305,7 +311,7 @@ export function FleetGraph({ events, connected, knightStatuses = {}, onKnightCli
     }
 
     // Compute heat levels
-    for (const name of KNIGHT_NAMES) {
+    for (const name of knightNames) {
       const a = act[name]
       a.busy = a.pendingTasks.size > 0
       a.heat = Math.min(a.recentTasks / 10, 1) // normalize to 0-1
@@ -313,20 +319,24 @@ export function FleetGraph({ events, connected, knightStatuses = {}, onKnightCli
     }
 
     return act
-  }, [events, knightStatuses])
+  }, [events, knightStatuses, knightNames])
 
   // Build initial nodes
   const initialNodes = useMemo(() => {
-    const nodes = layoutNodes(KNIGHT_NAMES, activity)
+    if (knightNames.length === 0) return []
+    const nodes = layoutNodes(knightNames, activity)
     // Update hub data
     const hub = nodes.find((n) => n.id === 'tim')
     if (hub) {
       hub.data = { connected, totalMessages: events.length }
     }
     return nodes
-  }, []) // Only compute layout once
+  }, [knightNames.length]) // Recompute layout when knight count changes
 
-  const initialEdges = useMemo(() => buildEdges(KNIGHT_NAMES, events), [])
+  const initialEdges = useMemo(() => {
+    if (knightNames.length === 0) return []
+    return buildEdges(knightNames, events)
+  }, [knightNames.length])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
@@ -359,13 +369,14 @@ export function FleetGraph({ events, connected, knightStatuses = {}, onKnightCli
   // Update edges — debounced to avoid layout thrash (#44)
   const edgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
+    if (knightNames.length === 0) return
     if (edgeTimerRef.current) clearTimeout(edgeTimerRef.current)
     edgeTimerRef.current = setTimeout(() => {
-      const newEdges = buildEdges(KNIGHT_NAMES, events)
+      const newEdges = buildEdges(knightNames, events)
       setEdges(newEdges)
     }, 300)
     return () => { if (edgeTimerRef.current) clearTimeout(edgeTimerRef.current) }
-  }, [events, setEdges])
+  }, [events, setEdges, knightNames])
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
@@ -375,6 +386,18 @@ export function FleetGraph({ events, connected, knightStatuses = {}, onKnightCli
     },
     [onKnightClick],
   )
+
+  // Empty state
+  if (knights.length === 0) {
+    return (
+      <div className="w-full h-[500px] bg-roundtable-navy rounded-xl border border-roundtable-steel overflow-hidden flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-500 mb-2">No knights in fleet</p>
+          <p className="text-xs text-gray-600">Waiting for knight data...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="w-full h-[500px] bg-roundtable-navy rounded-xl border border-roundtable-steel overflow-hidden">

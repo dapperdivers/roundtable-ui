@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { KNIGHT_CONFIG, KNIGHT_NAMES, getKnightPosition, knightNameForDomain } from '../lib/knights'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { buildKnightConfigFromFleet, getKnightPosition, knightNameForDomain } from '../lib/knights'
 import { MessageParticle } from './MessageParticle'
 import type { NatsEvent } from '../hooks/useWebSocket'
+import type { Knight } from '../hooks/useFleet'
 
 const SVG_SIZE = 500
 const CX = SVG_SIZE / 2
@@ -9,11 +10,35 @@ const CY = SVG_SIZE / 2
 const RADIUS = 190
 const NODE_R = 28
 
-// Color map for SVG fill (not tailwind)
-const KNIGHT_COLORS: Record<string, string> = {
+// Default color map for SVG fill (not tailwind) - fallback for static knights
+const DEFAULT_KNIGHT_COLORS: Record<string, string> = {
   galahad: '#f87171', kay: '#60a5fa', tristan: '#22d3ee', gawain: '#facc15',
   agravain: '#fb923c', bedivere: '#4ade80', percival: '#a78bfa', patsy: '#fbbf24',
   gareth: '#34d399', lancelot: '#818cf8',
+}
+
+// Convert tailwind color classes to hex
+function tailwindColorToHex(colorClass: string): string {
+  const colorMap: Record<string, string> = {
+    'text-red-400': '#f87171',
+    'text-blue-400': '#60a5fa',
+    'text-cyan-400': '#22d3ee',
+    'text-yellow-400': '#facc15',
+    'text-orange-400': '#fb923c',
+    'text-green-400': '#4ade80',
+    'text-purple-400': '#a78bfa',
+    'text-amber-400': '#fbbf24',
+    'text-emerald-400': '#34d399',
+    'text-indigo-400': '#818cf8',
+    'text-sky-400': '#38bdf8',
+    'text-teal-400': '#2dd4bf',
+    'text-pink-400': '#f472b6',
+    'text-violet-400': '#a78bfa',
+    'text-lime-400': '#a3e635',
+    'text-rose-400': '#fb7185',
+    'text-gray-400': '#9ca3af',
+  }
+  return colorMap[colorClass] || '#9ca3af'
 }
 
 interface Particle {
@@ -45,21 +70,38 @@ function parseSourceAndDest(event: NatsEvent): { source: string | null; dest: st
   }
 }
 
-function getNodePos(name: string): { x: number; y: number } {
-  if (name === 'center') return { x: CX, y: CY }
-  const idx = KNIGHT_NAMES.indexOf(name)
-  if (idx === -1) return { x: CX, y: CY }
-  return getKnightPosition(idx, KNIGHT_NAMES.length, CX, CY, RADIUS)
-}
-
 interface Props {
+  knights: Knight[]
   events: NatsEvent[]
   connected: boolean
   knightStatuses?: Record<string, string> // name -> 'online'|'offline'
   onKnightClick?: (knightName: string) => void
 }
 
-export function RoundTableGraph({ events, connected, knightStatuses = {}, onKnightClick }: Props) {
+export function RoundTableGraph({ knights, events, connected, knightStatuses = {}, onKnightClick }: Props) {
+  // Build dynamic knight config and names
+  const knightConfig = useMemo(() => buildKnightConfigFromFleet(knights), [knights])
+  const knightNames = useMemo(() => knights.map(k => k.name), [knights])
+  
+  // Build dynamic color map from knight config
+  const knightColors = useMemo(() => {
+    const colors: Record<string, string> = { ...DEFAULT_KNIGHT_COLORS }
+    for (const name of knightNames) {
+      const cfg = knightConfig[name]
+      if (cfg && !colors[name]) {
+        colors[name] = tailwindColorToHex(cfg.color)
+      }
+    }
+    return colors
+  }, [knightNames, knightConfig])
+
+  // Helper to get node position (depends on dynamic knight list)
+  const getNodePos = useCallback((name: string): { x: number; y: number } => {
+    if (name === 'center') return { x: CX, y: CY }
+    const idx = knightNames.indexOf(name)
+    if (idx === -1) return { x: CX, y: CY }
+    return getKnightPosition(idx, knightNames.length, CX, CY, RADIUS)
+  }, [knightNames])
   const [particles, setParticles] = useState<Particle[]>([])
   const [pulsingKnights, setPulsingKnights] = useState<Set<string>>(new Set())
   const idRef = useRef(0)
@@ -111,6 +153,18 @@ export function RoundTableGraph({ events, connected, knightStatuses = {}, onKnig
 
   const totalMessages = events.length
 
+  // Empty state
+  if (knights.length === 0) {
+    return (
+      <div className="w-full max-w-[600px] mx-auto h-[500px] flex items-center justify-center bg-roundtable-navy rounded-xl border border-roundtable-steel">
+        <div className="text-center">
+          <p className="text-gray-500 mb-2">No knights in fleet</p>
+          <p className="text-xs text-gray-600">Waiting for knight data...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <svg viewBox={`0 0 ${SVG_SIZE} ${SVG_SIZE}`} className="w-full max-w-[600px] mx-auto">
       <defs>
@@ -140,10 +194,10 @@ export function RoundTableGraph({ events, connected, knightStatuses = {}, onKnig
       <text x={CX} y={CY + 34} textAnchor="middle" fontSize={9} fill="#64748b">{totalMessages} msgs</text>
 
       {/* Knight nodes */}
-      {KNIGHT_NAMES.map((name, i) => {
-        const pos = getKnightPosition(i, KNIGHT_NAMES.length, CX, CY, RADIUS)
-        const cfg = KNIGHT_CONFIG[name]
-        const col = KNIGHT_COLORS[name] || '#94a3b8'
+      {knightNames.map((name, i) => {
+        const pos = getKnightPosition(i, knightNames.length, CX, CY, RADIUS)
+        const cfg = knightConfig[name]
+        const col = knightColors[name] || '#94a3b8'
         const isPulsing = pulsingKnights.has(name)
         const isOnline = knightStatuses[name] === 'online'
 
@@ -161,7 +215,7 @@ export function RoundTableGraph({ events, connected, knightStatuses = {}, onKnig
             {/* Node circle */}
             <circle cx={pos.x} cy={pos.y} r={NODE_R} fill="#1e293b" stroke={col} strokeWidth={2} className="transition-all duration-150 hover:brightness-125" />
             {/* Emoji */}
-            <text x={pos.x} y={pos.y + 2} textAnchor="middle" fontSize={18} dominantBaseline="central">{cfg.emoji}</text>
+            <text x={pos.x} y={pos.y + 2} textAnchor="middle" fontSize={18} dominantBaseline="central">{cfg?.emoji || '🤖'}</text>
             {/* Name */}
             <text x={pos.x} y={pos.y + NODE_R + 14} textAnchor="middle" fontSize={10} fill="#cbd5e1" className="capitalize">{name}</text>
             {/* Status dot */}

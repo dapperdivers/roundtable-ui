@@ -120,7 +120,7 @@ export function LivePage() {
 
       {/* Round Table Graph */}
       {/* Fleet network graph — React Flow powered */}
-      <FleetGraph events={filteredEvents} connected={connected} knightStatuses={knightStatuses} onKnightClick={handleKnightClick} />
+      <FleetGraph knights={fleetKnights} events={filteredEvents} connected={connected} knightStatuses={knightStatuses} onKnightClick={handleKnightClick} />
 
       {/* Inter-knight comms summary (#51) */}
       {(() => {
