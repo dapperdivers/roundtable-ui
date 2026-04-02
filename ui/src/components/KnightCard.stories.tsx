@@ -78,3 +78,90 @@ export const HighRestarts: Story = {
     knight: { ...baseKnight, name: 'agravain', domain: 'pentest', status: 'online', restarts: 12, age: '6h 45m' },
   },
 }
+
+export const WithPhaseBadge: Story = {
+  args: {
+    knight: { 
+      ...baseKnight, 
+      name: 'lancelot', 
+      domain: 'career', 
+      status: 'online', 
+      phase: 'Ready',
+      model: 'claude-sonnet-4-20250514',
+      tasksCompleted: 42,
+      totalCost: '$2.34'
+    },
+  },
+}
+
+export const SuspendedKnight: Story = {
+  args: {
+    knight: { 
+      ...baseKnight, 
+      name: 'patsy', 
+      domain: 'vault', 
+      status: 'offline', 
+      ready: false,
+      phase: 'Suspended',
+      suspended: true,
+      model: 'claude-sonnet-4-20250514'
+    },
+  },
+}
+
+export const SandboxRuntime: Story = {
+  args: {
+    knight: { 
+      ...baseKnight, 
+      name: 'coder-1', 
+      domain: 'coding', 
+      status: 'online',
+      runtime: 'sandbox',
+      model: 'claude-sonnet-4-20250514',
+      tasksCompleted: 15,
+      totalCost: '$0.87',
+      concurrency: 3
+    },
+  },
+}
+
+export const WithPerformanceMetrics: Story = {
+  args: {
+    knight: { 
+      ...baseKnight, 
+      name: 'gawain', 
+      domain: 'project', 
+      status: 'busy',
+      phase: 'Ready',
+      model: 'claude-sonnet-4-20250514',
+      runtime: 'deployment',
+      tasksCompleted: 128,
+      tasksFailed: 5,
+      totalCost: '$15.67',
+      concurrency: 5,
+      taskTimeout: 600,
+      skillsList: ['terraform', 'kubectl', 'aws-cli', 'gh']
+    },
+    activity: {
+      recent: 8,
+      lastActive: new Date().toISOString(),
+      busy: true,
+      sparkline: [0.3, 0.5, 0.7, 0.9, 1.0, 0.8, 0.6],
+    },
+  },
+}
+
+export const DegradedPhase: Story = {
+  args: {
+    knight: { 
+      ...baseKnight, 
+      name: 'tristan', 
+      domain: 'infra', 
+      status: 'online',
+      ready: false,
+      phase: 'Degraded',
+      restarts: 8,
+      model: 'claude-sonnet-4-20250514'
+    },
+  },
+}
