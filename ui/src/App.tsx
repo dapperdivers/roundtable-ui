@@ -14,6 +14,7 @@ import { ArchitecturePage } from './pages/Architecture'
 import { LoginPage } from './pages/Login'
 import { RoundTablesPage } from './pages/RoundTables'
 import { ToastProvider, useToast } from './components/Toast'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { useWebSocket } from './hooks/useWebSocket'
 import { useTaskNotifications } from './hooks/useTaskNotifications'
 import { isAuthenticated, clearApiKey } from './lib/auth'
@@ -168,19 +169,21 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 overflow-auto p-4 md:p-8 mt-14 md:mt-0">
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/fleet" element={<FleetPage />} />
-          <Route path="/missions" element={<MissionsPage />} />
-          <Route path="/roundtables" element={<RoundTablesPage />} />
-          <Route path="/quests" element={<TasksPage />} />
-          <Route path="/flow" element={<LivePage />} />
-          <Route path="/chronicles" element={<BriefingsPage />} />
-          <Route path="/chains" element={<ChainsPage />} />
-          <Route path="/costs" element={<CostDashboardPage />} />
-          <Route path="/sessions" element={<SessionsPage />} />
-          <Route path="/architecture" element={<ArchitecturePage />} />
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/fleet" element={<FleetPage />} />
+            <Route path="/missions" element={<MissionsPage />} />
+            <Route path="/roundtables" element={<RoundTablesPage />} />
+            <Route path="/quests" element={<TasksPage />} />
+            <Route path="/flow" element={<LivePage />} />
+            <Route path="/chronicles" element={<BriefingsPage />} />
+            <Route path="/chains" element={<ChainsPage />} />
+            <Route path="/costs" element={<CostDashboardPage />} />
+            <Route path="/sessions" element={<SessionsPage />} />
+            <Route path="/architecture" element={<ArchitecturePage />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
     </div>
     </ToastProvider>
