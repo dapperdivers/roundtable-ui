@@ -3,6 +3,7 @@ import { authFetch } from '../lib/auth'
 
 export interface KnightSessionStats {
   knight: string
+  supported?: boolean  // whether knight responded to introspect
   session: {
     sessionId: string
     userMessages: number
@@ -44,6 +45,24 @@ export interface SessionTreeNode {
   summary: string
 }
 
+// Helper to add timeout to fetch requests
+async function fetchWithTimeout(url: string, timeoutMs = 5000): Promise<Response | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  
+  try {
+    const res = await authFetch(url, { signal: controller.signal })
+    clearTimeout(timeout)
+    return res
+  } catch (e) {
+    clearTimeout(timeout)
+    if ((e as Error).name === 'AbortError') {
+      return null  // timeout - knight doesn't support introspect
+    }
+    throw e
+  }
+}
+
 export function useKnightSession() {
   const [stats, setStats] = useState<KnightSessionStats | null>(null)
   const [recent, setRecent] = useState<SessionEntry[]>([])
@@ -51,40 +70,58 @@ export function useKnightSession() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchStats = useCallback(async (knight: string) => {
+  const fetchStats = useCallback(async (knight: string, timeoutMs = 5000) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await authFetch(`/api/fleet/${knight}/session?type=stats`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`)
+      const res = await fetchWithTimeout(`/api/fleet/${knight}/session?type=stats`, timeoutMs)
+      if (!res) {
+        // Knight doesn't support introspect - not an error
+        setStats({ knight, supported: false, session: null, runtime: { uptime: 0, activeTasks: 0, model: '' } })
+        return
+      }
+      if (!res.ok) {
+        setStats({ knight, supported: false, session: null, runtime: { uptime: 0, activeTasks: 0, model: '' } })
+        return
+      }
       const data = await res.json()
-      setStats(data)
+      setStats({ ...data, supported: true })
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
+      // Graceful failure - return null instead of throwing
+      setStats({ knight, supported: false, session: null, runtime: { uptime: 0, activeTasks: 0, model: '' } })
+      setError(null)  // Don't show error for unsupported knights
     } finally {
       setLoading(false)
     }
   }, [])
 
-  const fetchRecent = useCallback(async (knight: string, limit = 20) => {
+  const fetchRecent = useCallback(async (knight: string, limit = 20, timeoutMs = 5000) => {
     try {
-      const res = await authFetch(`/api/fleet/${knight}/session?type=recent&limit=${limit}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const res = await fetchWithTimeout(`/api/fleet/${knight}/session?type=recent&limit=${limit}`, timeoutMs)
+      if (!res || !res.ok) {
+        setRecent([])
+        return
+      }
       const data = await res.json()
       setRecent(data.entries || [])
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
+      setRecent([])
+      setError(null)
     }
   }, [])
 
-  const fetchTree = useCallback(async (knight: string) => {
+  const fetchTree = useCallback(async (knight: string, timeoutMs = 5000) => {
     try {
-      const res = await authFetch(`/api/fleet/${knight}/session?type=tree`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const res = await fetchWithTimeout(`/api/fleet/${knight}/session?type=tree`, timeoutMs)
+      if (!res || !res.ok) {
+        setTree([])
+        return
+      }
       const data = await res.json()
       setTree(data.nodes || [])
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
+      setTree([])
+      setError(null)
     }
   }, [])
 
