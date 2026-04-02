@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { TreePine, ChevronRight, ChevronDown, Wrench, MessageSquare, Brain, RefreshCw, Search, BarChart3 } from 'lucide-react'
-import { KNIGHT_CONFIG, getKnightConfig } from '../lib/knights'
+import { TreePine, ChevronRight, ChevronDown, Wrench, MessageSquare, Brain, RefreshCw, Search, BarChart3, Loader2 } from 'lucide-react'
+import { getKnightConfig, buildKnightConfigFromFleet } from '../lib/knights'
+import { useFleet } from '../hooks/useFleet'
 import type { SessionEntry, SessionTreeNode, KnightSessionStats } from '../hooks/useKnightSession'
 
 const entryTypeIcons: Record<string, string> = {
@@ -102,7 +103,8 @@ function ToolCallCard({ entry }: { entry: SessionEntry }) {
 }
 
 export function SessionsPage() {
-  const [selectedKnight, setSelectedKnight] = useState('galahad')
+  const { knights, loading: fleetLoading } = useFleet()
+  const [selectedKnight, setSelectedKnight] = useState('')
   const [view, setView] = useState<'timeline' | 'tree' | 'tools'>('timeline')
   const [entries, setEntries] = useState<SessionEntry[]>([])
   const [treeNodes, setTreeNodes] = useState<SessionTreeNode[]>([])
@@ -110,36 +112,86 @@ export function SessionsPage() {
   const [error, setError] = useState<string | null>(null)
   const [filterType, setFilterType] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
+  const [knightSearchQuery, setKnightSearchQuery] = useState('')
   const [stats, setStats] = useState<KnightSessionStats | null>(null)
   const [allKnightStats, setAllKnightStats] = useState<Record<string, KnightSessionStats>>({})
   const [showFleetPerf, setShowFleetPerf] = useState(false)
 
-  const knightNames = Object.keys(KNIGHT_CONFIG)
-  const config = getKnightConfig(selectedKnight)
+  // Build dynamic knight config from fleet
+  const knightConfig = useMemo(() => buildKnightConfigFromFleet(knights), [knights])
+  
+  // Set default knight once fleet loads
+  useEffect(() => {
+    if (knights.length > 0 && !selectedKnight) {
+      setSelectedKnight(knights[0].name)
+    }
+  }, [knights, selectedKnight])
+
+  const config = selectedKnight ? knightConfig[selectedKnight] : null
+  
+  // Filter knights by search query
+  const filteredKnights = useMemo(() => {
+    if (!knightSearchQuery) return knights
+    const q = knightSearchQuery.toLowerCase()
+    return knights.filter(k => 
+      k.name.toLowerCase().includes(q) || 
+      k.domain.toLowerCase().includes(q)
+    )
+  }, [knights, knightSearchQuery])
 
   const fetchData = useCallback(async () => {
+    if (!selectedKnight) return
+    
     setLoading(true)
     setError(null)
+    
     try {
+      // Fetch with timeout - gracefully handle unsupported knights
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 5000)
+
       // Always fetch stats
-      fetch(`/api/fleet/${selectedKnight}/session?type=stats`)
+      fetch(`/api/fleet/${selectedKnight}/session?type=stats`, { signal: controller.signal })
         .then(r => r.ok ? r.json() : null)
-        .then(d => { if (d) setStats(d) })
-        .catch(() => {})
+        .then(d => { 
+          clearTimeout(timeout)
+          if (d) {
+            setStats({ ...d, supported: true })
+          } else {
+            setStats({ knight: selectedKnight, supported: false, session: null, runtime: { uptime: 0, activeTasks: 0, model: '' } })
+          }
+        })
+        .catch(() => {
+          clearTimeout(timeout)
+          setStats({ knight: selectedKnight, supported: false, session: null, runtime: { uptime: 0, activeTasks: 0, model: '' } })
+        })
 
       if (view === 'tree') {
-        const res = await fetch(`/api/fleet/${selectedKnight}/session?type=tree`)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const res = await fetch(`/api/fleet/${selectedKnight}/session?type=tree`, { signal: controller.signal })
+        if (!res.ok) {
+          setTreeNodes([])
+          return
+        }
         const data = await res.json()
         setTreeNodes(data.nodes || [])
       } else {
-        const res = await fetch(`/api/fleet/${selectedKnight}/session?type=recent&limit=100`)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const res = await fetch(`/api/fleet/${selectedKnight}/session?type=recent&limit=100`, { signal: controller.signal })
+        if (!res.ok) {
+          setEntries([])
+          return
+        }
         const data = await res.json()
         setEntries(data.entries || [])
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to fetch session data')
+      if ((e as Error).name === 'AbortError') {
+        // Timeout - knight doesn't support introspect
+        setError(null)
+        setEntries([])
+        setTreeNodes([])
+      } else {
+        setError(e instanceof Error ? e.message : 'Failed to fetch session data')
+      }
     } finally {
       setLoading(false)
     }
@@ -151,14 +203,20 @@ export function SessionsPage() {
   const fetchFleetPerf = useCallback(async () => {
     setShowFleetPerf(true)
     const results: Record<string, KnightSessionStats> = {}
-    await Promise.all(knightNames.map(async k => {
+    await Promise.all(knights.map(async k => {
       try {
-        const res = await fetch(`/api/fleet/${k}/session?type=stats`)
-        if (res.ok) results[k] = await res.json()
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 5000)
+        const res = await fetch(`/api/fleet/${k.name}/session?type=stats`, { signal: controller.signal })
+        clearTimeout(timeout)
+        if (res.ok) {
+          const data = await res.json()
+          results[k.name] = { ...data, supported: true }
+        }
       } catch {}
     }))
     setAllKnightStats(results)
-  }, [knightNames])
+  }, [knights])
 
   // Build tree from flat nodes
   const tree = useMemo(() => {
@@ -209,29 +267,63 @@ export function SessionsPage() {
     return { total: tools.length, byName: Object.entries(byName).sort((a, b) => b[1] - a[1]) }
   }, [entries])
 
+  if (fleetLoading) {
+    return (
+      <div className="text-center py-12">
+        <Loader2 className="w-8 h-8 text-roundtable-gold animate-spin mx-auto mb-4" />
+        <p className="text-gray-400">Loading fleet data...</p>
+      </div>
+    )
+  }
+
+  if (knights.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <TreePine className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+        <p className="text-gray-400">No knights available in the fleet</p>
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-white flex items-center gap-3">
           <TreePine className="w-8 h-8 text-roundtable-gold" />
           Session Explorer
+          <span className="text-sm text-gray-500 font-normal">({knights.length} knights)</span>
         </h1>
         <button onClick={fetchData}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors">
+          disabled={!selectedKnight}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </button>
       </div>
 
-      {/* Knight picker + view tabs */}
+      {/* Knight picker with search + view tabs */}
       <div className="flex items-center gap-4 mb-6">
-        <select value={selectedKnight} onChange={e => setSelectedKnight(e.target.value)}
-          className="bg-roundtable-navy border border-roundtable-steel rounded-lg px-4 py-2 text-white">
-          {knightNames.map(k => {
-            const kc = getKnightConfig(k)
-            return <option key={k} value={k}>{kc.emoji} {k}</option>
-          })}
-        </select>
+        <div className="relative">
+          <select value={selectedKnight} onChange={e => setSelectedKnight(e.target.value)}
+            className="bg-roundtable-navy border border-roundtable-steel rounded-lg px-4 py-2 text-white pr-8 appearance-none min-w-[200px]">
+            {filteredKnights.map(k => {
+              const kc = knightConfig[k.name]
+              const statusIcon = k.status === 'online' ? '🟢' : k.status === 'busy' ? '🟡' : '🔴'
+              return <option key={k.name} value={k.name}>{kc?.emoji || '🤖'} {k.name} {statusIcon}</option>
+            })}
+          </select>
+        </div>
+        
+        <div className="relative flex-1 max-w-xs">
+          <Search className="w-4 h-4 text-gray-500 absolute left-3 top-2.5" />
+          <input 
+            type="text" 
+            value={knightSearchQuery} 
+            onChange={e => setKnightSearchQuery(e.target.value)}
+            placeholder="Filter knights by name or domain..."
+            className="w-full bg-roundtable-navy border border-roundtable-steel rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-500" 
+          />
+        </div>
 
         <div className="flex rounded-lg border border-roundtable-steel overflow-hidden">
           {(['timeline', 'tree', 'tools'] as const).map(v => (
@@ -268,7 +360,21 @@ export function SessionsPage() {
       </div>
 
       {/* Knight stats bar */}
-      {stats?.session && (
+      {stats?.supported === false && (
+        <div className="bg-amber-900/20 border border-amber-500/30 rounded-lg p-4 mb-4">
+          <p className="text-amber-400 text-sm flex items-center gap-2">
+            ℹ️ This knight does not support session introspection. Basic fleet info shown instead.
+          </p>
+          {config && (
+            <div className="mt-2 text-xs text-gray-400">
+              <span className="font-medium">{config.emoji} {selectedKnight}</span> · 
+              <span className="ml-2">Domain: {knights.find(k => k.name === selectedKnight)?.domain || 'unknown'}</span> · 
+              <span className="ml-2">Status: {knights.find(k => k.name === selectedKnight)?.status || 'unknown'}</span>
+            </div>
+          )}
+        </div>
+      )}
+      {stats?.session && stats.supported !== false && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
           <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
             <p className="text-xs text-gray-500">Messages</p>
@@ -355,7 +461,14 @@ export function SessionsPage() {
       {view === 'tree' && !loading && (
         <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
           {tree.length === 0 ? (
-            <p className="text-gray-500 text-center py-8">No session tree data. Knight may not have introspection enabled.</p>
+            <div className="text-center py-12">
+              <TreePine className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+              {stats?.supported === false ? (
+                <p className="text-gray-500">Session introspection not available for this knight.</p>
+              ) : (
+                <p className="text-gray-500">No session tree data. Dispatch a task to see activity.</p>
+              )}
+            </div>
           ) : (
             <div className="max-h-[70vh] overflow-auto">
               {tree.map(node => (
@@ -370,7 +483,16 @@ export function SessionsPage() {
       {view !== 'tree' && !loading && (
         <div className="space-y-2">
           {filteredEntries.length === 0 && (
-            <p className="text-gray-500 text-center py-12">No session entries found. Dispatch a task first.</p>
+            <div className="text-center py-12">
+              <MessageSquare className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+              {stats?.supported === false ? (
+                <p className="text-gray-500">Session introspection not available for this knight.</p>
+              ) : searchQuery || filterType ? (
+                <p className="text-gray-500">No entries match your filters.</p>
+              ) : (
+                <p className="text-gray-500">No session entries found. Dispatch a task to see activity.</p>
+              )}
+            </div>
           )}
           {filteredEntries.map(entry => (
             <ToolCallCard key={entry.id} entry={entry} />
