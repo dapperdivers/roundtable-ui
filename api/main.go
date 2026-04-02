@@ -1290,23 +1290,47 @@ func parseChainResource(obj map[string]interface{}, knightDomains map[string]str
 	return chain
 }
 
+// MissionKnightStatusDTO represents a knight's status within a mission
+type MissionKnightStatusDTO struct {
+	Name           string `json:"name"`
+	Ready          bool   `json:"ready"`
+	TasksCompleted int64  `json:"tasksCompleted"`
+	Ephemeral      bool   `json:"ephemeral"`
+}
+
+// MissionChainStatusDTO represents a chain's status within a mission
+type MissionChainStatusDTO struct {
+	Name        string `json:"name"`
+	ChainCRName string `json:"chainCRName"`
+	Phase       string `json:"phase"`
+}
+
 // MissionSummary is the API response for mission list
 type MissionSummary struct {
-	Name           string          `json:"name"`
-	Namespace      string          `json:"namespace"`
-	Phase          string          `json:"phase"`
-	Objective      string          `json:"objective"`
-	StartedAt      *string         `json:"startedAt"`
-	ExpiresAt      *string         `json:"expiresAt"`
-	Knights        []string        `json:"knights"`
-	Chains         []string        `json:"chains"`
-	CostBudgetUSD  string          `json:"costBudgetUSD"`
-	TotalCost      string          `json:"totalCost"`
-	TTL            int             `json:"ttl"`
-	Timeout        int             `json:"timeout"`
-	RoundTableRef  string          `json:"roundTableRef"`
-	MetaMission    bool            `json:"metaMission"`
-	PlanningResult *PlanningResult `json:"planningResult,omitempty"`
+	Name             string            `json:"name"`
+	Namespace        string            `json:"namespace"`
+	Phase            string            `json:"phase"`
+	Objective        string            `json:"objective"`
+	StartedAt        *string           `json:"startedAt"`
+	ExpiresAt        *string           `json:"expiresAt"`
+	Knights          []string          `json:"knights"`
+	Chains           []string          `json:"chains"`
+	CostBudgetUSD    string            `json:"costBudgetUSD"`
+	TotalCost        string            `json:"totalCost"`
+	TTL              int               `json:"ttl"`
+	Timeout          int               `json:"timeout"`
+	RoundTableRef    string            `json:"roundTableRef"`
+	MetaMission      bool              `json:"metaMission"`
+	PlanningResult   *PlanningResult   `json:"planningResult,omitempty"`
+	SuccessCriteria  string            `json:"successCriteria,omitempty"`
+	Briefing         string            `json:"briefing,omitempty"`
+	CleanupPolicy    string            `json:"cleanupPolicy,omitempty"`
+	RecruitExisting  bool              `json:"recruitExisting"`
+	RetainResults    bool              `json:"retainResults"`
+	KnightStatuses   []MissionKnightStatusDTO `json:"knightStatuses,omitempty"`
+	ChainStatuses    []MissionChainStatusDTO  `json:"chainStatuses,omitempty"`
+	ResultsConfigMap string                   `json:"resultsConfigMap,omitempty"`
+	CompletedAt      *string                  `json:"completedAt,omitempty"`
 }
 
 func missionsHandler(namespace string) http.HandlerFunc {
@@ -1480,16 +1504,22 @@ func parseMissionResource(obj map[string]interface{}) MissionSummary {
 	metadata := getNestedMap(obj, "metadata")
 
 	mission := MissionSummary{
-		Name:          getStr(metadata, "name"),
-		Namespace:     getStr(metadata, "namespace"),
-		Phase:         getStr(status, "phase"),
-		Objective:     getStr(spec, "objective"),
-		CostBudgetUSD: getStr(spec, "costBudgetUSD"),
-		TotalCost:     getStr(status, "totalCost"),
-		TTL:           getInt(spec, "ttl"),
-		Timeout:       getInt(spec, "timeout"),
-		RoundTableRef: getStr(spec, "roundTableRef"),
-		MetaMission:   getBool(spec, "metaMission"),
+		Name:            getStr(metadata, "name"),
+		Namespace:       getStr(metadata, "namespace"),
+		Phase:           getStr(status, "phase"),
+		Objective:       getStr(spec, "objective"),
+		CostBudgetUSD:   getStr(spec, "costBudgetUSD"),
+		TotalCost:       getStr(status, "totalCost"),
+		TTL:             getInt(spec, "ttl"),
+		Timeout:         getInt(spec, "timeout"),
+		RoundTableRef:   getStr(spec, "roundTableRef"),
+		MetaMission:     getBool(spec, "metaMission"),
+		SuccessCriteria: getStr(spec, "successCriteria"),
+		Briefing:        getStr(spec, "briefing"),
+		CleanupPolicy:   getStr(spec, "cleanupPolicy"),
+		RecruitExisting: getBool(spec, "recruitExisting"),
+		RetainResults:   getBool(spec, "retainResults"),
+		ResultsConfigMap: getStr(status, "resultsConfigMap"),
 	}
 
 	// Parse timing
@@ -1522,6 +1552,46 @@ func parseMissionResource(obj map[string]interface{}) MissionSummary {
 		}
 	}
 
+	// Parse knightStatuses from status
+	if ks := getSlice(status, "knightStatuses"); ks != nil {
+		for _, k := range ks {
+			if km, ok := k.(map[string]interface{}); ok {
+				dto := MissionKnightStatusDTO{
+					Name:      getStr(km, "name"),
+					Ready:     getBool(km, "ready"),
+					Ephemeral: getBool(km, "ephemeral"),
+				}
+				if v, ok := km["tasksCompleted"]; ok {
+					switch n := v.(type) {
+					case float64:
+						dto.TasksCompleted = int64(n)
+					case int64:
+						dto.TasksCompleted = n
+					}
+				}
+				mission.KnightStatuses = append(mission.KnightStatuses, dto)
+			}
+		}
+	}
+
+	// Parse chainStatuses from status
+	if cs := getSlice(status, "chainStatuses"); cs != nil {
+		for _, c := range cs {
+			if cm, ok := c.(map[string]interface{}); ok {
+				mission.ChainStatuses = append(mission.ChainStatuses, MissionChainStatusDTO{
+					Name:        getStr(cm, "name"),
+					ChainCRName: getStr(cm, "chainCRName"),
+					Phase:       getStr(cm, "phase"),
+				})
+			}
+		}
+	}
+
+	// Parse completedAt from status
+	if t := getStr(status, "completedAt"); t != "" {
+		mission.CompletedAt = &t
+	}
+
 	// Parse planning result
 	if pr := getNestedMap(status, "planningResult"); pr != nil {
 		mission.PlanningResult = &PlanningResult{
@@ -1537,16 +1607,38 @@ func parseMissionResource(obj map[string]interface{}) MissionSummary {
 	return mission
 }
 
+// WarmPoolStatusDTO represents the warm pool status fields from the CRD
+type WarmPoolStatusDTO struct {
+	Available    int `json:"available"`
+	Provisioning int `json:"provisioning"`
+	Claimed      int `json:"claimed"`
+}
+
+// PoliciesDTO represents the policies spec fields from the CRD
+type PoliciesDTO struct {
+	MaxConcurrentTasks int    `json:"maxConcurrentTasks"`
+	CostBudgetUSD      string `json:"costBudgetUSD"`
+	MaxKnights         int    `json:"maxKnights"`
+	MaxMissions        int    `json:"maxMissions"`
+}
+
 // RoundTableSummary is the API response for roundtable list
 type RoundTableSummary struct {
-	Name          string `json:"name"`
-	Namespace     string `json:"namespace"`
-	Phase         string `json:"phase"`
-	KnightsReady  int    `json:"knightsReady"`
-	KnightsTotal  int    `json:"knightsTotal"`
-	NATSPrefix    string `json:"natsPrefix"`
-	CostBudgetUSD string `json:"costBudgetUSD"`
-	TotalCost     string `json:"totalCost"`
+	Name                string             `json:"name"`
+	Namespace           string             `json:"namespace"`
+	Phase               string             `json:"phase"`
+	KnightsReady        int                `json:"knightsReady"`
+	KnightsTotal        int                `json:"knightsTotal"`
+	NATSPrefix          string             `json:"natsPrefix"`
+	CostBudgetUSD       string             `json:"costBudgetUSD"`
+	TotalCost           string             `json:"totalCost"`
+	TotalTasksCompleted int64              `json:"totalTasksCompleted"`
+	ActiveMissions      int                `json:"activeMissions"`
+	WarmPool            *WarmPoolStatusDTO `json:"warmPool,omitempty"`
+	Policies            *PoliciesDTO       `json:"policies,omitempty"`
+	Description         string             `json:"description,omitempty"`
+	Suspended           bool               `json:"suspended"`
+	Ephemeral           bool               `json:"ephemeral"`
 }
 
 func roundTablesHandler(namespace string) http.HandlerFunc {
@@ -1611,6 +1703,22 @@ func parseRoundTableResource(obj map[string]interface{}) RoundTableSummary {
 		KnightsReady: getInt(status, "knightsReady"),
 		KnightsTotal: getInt(status, "knightsTotal"),
 		TotalCost:    getStr(status, "totalCost"),
+		Description:  getStr(spec, "description"),
+		Suspended:    getBool(spec, "suspended"),
+		Ephemeral:    getBool(spec, "ephemeral"),
+	}
+
+	// Parse totalTasksCompleted (int64)
+	if status != nil {
+		if v, ok := status["totalTasksCompleted"]; ok {
+			switch n := v.(type) {
+			case float64:
+				rt.TotalTasksCompleted = int64(n)
+			case int64:
+				rt.TotalTasksCompleted = n
+			}
+		}
+		rt.ActiveMissions = getInt(status, "activeMissions")
 	}
 
 	// Parse NATS config
@@ -1621,6 +1729,21 @@ func parseRoundTableResource(obj map[string]interface{}) RoundTableSummary {
 	// Parse policies
 	if policies := getNestedMap(spec, "policies"); policies != nil {
 		rt.CostBudgetUSD = getStr(policies, "costBudgetUSD")
+		rt.Policies = &PoliciesDTO{
+			MaxConcurrentTasks: getInt(policies, "maxConcurrentTasks"),
+			CostBudgetUSD:      getStr(policies, "costBudgetUSD"),
+			MaxKnights:         getInt(policies, "maxKnights"),
+			MaxMissions:        getInt(policies, "maxMissions"),
+		}
+	}
+
+	// Parse warm pool status
+	if wp := getNestedMap(status, "warmPool"); wp != nil {
+		rt.WarmPool = &WarmPoolStatusDTO{
+			Available:    getInt(wp, "available"),
+			Provisioning: getInt(wp, "provisioning"),
+			Claimed:      getInt(wp, "claimed"),
+		}
 	}
 
 	return rt
