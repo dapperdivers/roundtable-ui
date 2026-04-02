@@ -18,6 +18,16 @@ const mockKnight: Knight = {
     'app.kubernetes.io/name': 'knight',
     'roundtable.io/domain': 'security',
   },
+  // CRD fields
+  phase: 'Ready',
+  model: 'claude-sonnet-4-20250514',
+  runtime: 'deployment',
+  suspended: false,
+  tasksCompleted: 100,
+  tasksFailed: 5,
+  totalCost: '12.45',
+  concurrency: 5,
+  taskTimeout: 300,
 }
 
 describe('KnightCard', () => {
@@ -211,5 +221,91 @@ describe('KnightCard', () => {
   it('displays inspect arrow', () => {
     render(<KnightCard knight={mockKnight} />)
     expect(screen.getByText('inspect →')).toBeInTheDocument()
+  })
+
+  // New CRD parity tests
+  it('renders phase badge when phase is provided', () => {
+    render(<KnightCard knight={mockKnight} />)
+    expect(screen.getByText('Ready')).toBeInTheDocument()
+  })
+
+  it('renders Degraded phase with yellow styling', () => {
+    const degradedKnight = { ...mockKnight, phase: 'Degraded' }
+    const { container } = render(<KnightCard knight={degradedKnight} />)
+    expect(screen.getByText('Degraded')).toBeInTheDocument()
+    const badge = container.querySelector('.bg-yellow-500\\/20')
+    expect(badge).toBeInTheDocument()
+  })
+
+  it('renders Suspended phase badge', () => {
+    const suspendedKnight = { ...mockKnight, phase: 'Suspended' }
+    render(<KnightCard knight={suspendedKnight} />)
+    expect(screen.getByText('Suspended')).toBeInTheDocument()
+  })
+
+  it('shows suspended overlay when knight is suspended', () => {
+    const suspendedKnight = { ...mockKnight, suspended: true }
+    render(<KnightCard knight={suspendedKnight} />)
+    expect(screen.getByText('SUSPENDED')).toBeInTheDocument()
+  })
+
+  it('does not show suspended overlay when knight is not suspended', () => {
+    render(<KnightCard knight={mockKnight} />)
+    expect(screen.queryByText('SUSPENDED')).not.toBeInTheDocument()
+  })
+
+  it('renders runtime badge for deployment', () => {
+    render(<KnightCard knight={mockKnight} />)
+    expect(screen.getByText('deployment')).toBeInTheDocument()
+  })
+
+  it('renders runtime badge for sandbox with purple styling', () => {
+    const sandboxKnight = { ...mockKnight, runtime: 'sandbox' }
+    const { container } = render(<KnightCard knight={sandboxKnight} />)
+    expect(screen.getByText('sandbox')).toBeInTheDocument()
+    const badge = container.querySelector('.bg-purple-500\\/20')
+    expect(badge).toBeInTheDocument()
+  })
+
+  it('renders model short name', () => {
+    render(<KnightCard knight={mockKnight} />)
+    // Model short name extraction: "claude-sonnet-4-20250514" -> "sonnet-4"
+    expect(screen.getByText(/sonnet-4/)).toBeInTheDocument()
+  })
+
+  it('displays performance metrics when tasks completed/failed are provided', () => {
+    render(<KnightCard knight={mockKnight} />)
+    expect(screen.getByText('100')).toBeInTheDocument() // tasksCompleted
+  })
+
+  it('calculates and displays success rate', () => {
+    const knight = { ...mockKnight, tasksCompleted: 95, tasksFailed: 5 }
+    render(<KnightCard knight={knight} />)
+    // Success rate: 95/(95+5) = 95%
+    expect(screen.getByText(/95%/)).toBeInTheDocument()
+  })
+
+  it('displays total cost when provided', () => {
+    render(<KnightCard knight={mockKnight} />)
+    expect(screen.getByText(/\$12\.45/)).toBeInTheDocument()
+  })
+
+  it('handles knight without optional CRD fields', () => {
+    const minimalKnight: Knight = {
+      name: 'minimal',
+      domain: 'general',
+      status: 'online',
+      ready: true,
+      restarts: 0,
+      age: '1h',
+      image: 'knight:latest',
+      skills: 0,
+      nixTools: 0,
+      labels: {},
+    }
+    
+    render(<KnightCard knight={minimalKnight} />)
+    expect(screen.getByText('minimal')).toBeInTheDocument()
+    expect(screen.queryByText('SUSPENDED')).not.toBeInTheDocument()
   })
 })
