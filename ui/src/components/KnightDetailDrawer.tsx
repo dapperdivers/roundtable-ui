@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { X, Activity, Cpu, DollarSign, MessageSquare, Wrench, Clock, ChevronRight, RefreshCw, FileCode, Package, Terminal, ChevronDown } from 'lucide-react'
+import { X, Activity, Cpu, DollarSign, MessageSquare, Wrench, Clock, ChevronRight, RefreshCw, FileCode, Package, Terminal, ChevronDown, Settings, BarChart2, Tag } from 'lucide-react'
 import { getKnightConfig } from '../lib/knights'
 import { useKnightSession } from '../hooks/useKnightSession'
 import { authFetch } from '../lib/auth'
-import type { Knight, GeneratedSkill } from '../hooks/useFleet'
+import type { Knight, GeneratedSkill, KnightCondition } from '../hooks/useFleet'
 
 interface Props {
   knight: Knight | null
@@ -171,6 +171,158 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
             <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-3">
               <p className="text-red-400 text-sm">⚠️ {error}</p>
               <p className="text-red-400/60 text-xs mt-1">Knight may not have introspection enabled yet</p>
+            </div>
+          )}
+
+          {/* Configuration */}
+          {(knightDetail?.model || knightDetail?.runtime || knightDetail?.concurrencyLimit != null || knightDetail?.taskTimeout || knightDetail?.suspended) && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                <Settings className="w-4 h-4" />
+                Configuration
+              </h3>
+              <div className="bg-roundtable-slate rounded-lg p-3 space-y-2">
+                {knightDetail.suspended && (
+                  <div className="flex justify-between text-sm items-center">
+                    <span className="text-gray-400">Status</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">Suspended</span>
+                  </div>
+                )}
+                {knightDetail.model && (
+                  <div className="flex justify-between text-sm items-center">
+                    <span className="text-gray-400">Model</span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono">{knightDetail.model}</span>
+                  </div>
+                )}
+                {knightDetail.runtime && (
+                  <div className="flex justify-between text-sm items-center">
+                    <span className="text-gray-400">Runtime</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                      knightDetail.runtime === 'sandbox'
+                        ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                        : 'bg-gray-500/10 text-gray-400 border-gray-500/20'
+                    }`}>{knightDetail.runtime}</span>
+                  </div>
+                )}
+                {knightDetail.concurrencyLimit != null && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Concurrency Limit</span>
+                    <span className="text-gray-200">{knightDetail.concurrencyLimit}</span>
+                  </div>
+                )}
+                {knightDetail.taskTimeout && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400">Task Timeout</span>
+                    <span className="text-gray-200">{knightDetail.taskTimeout}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Performance */}
+          {(knightDetail?.tasksCompleted != null || knightDetail?.tasksFailed != null || knightDetail?.totalCost) && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                <BarChart2 className="w-4 h-4" />
+                Performance
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                {knightDetail.tasksCompleted != null && (
+                  <StatCard
+                    icon={<Activity className="w-4 h-4" />}
+                    label="Completed"
+                    value={knightDetail.tasksCompleted}
+                    color="text-green-400"
+                  />
+                )}
+                {knightDetail.tasksFailed != null && (
+                  <StatCard
+                    icon={<Activity className="w-4 h-4" />}
+                    label="Failed"
+                    value={knightDetail.tasksFailed}
+                    color="text-red-400"
+                  />
+                )}
+                {knightDetail.totalCost && (
+                  <StatCard
+                    icon={<DollarSign className="w-4 h-4" />}
+                    label="Total Cost"
+                    value={`$${knightDetail.totalCost}`}
+                    color="text-roundtable-gold"
+                  />
+                )}
+                {knightDetail.tasksCompleted != null && knightDetail.tasksFailed != null && (knightDetail.tasksCompleted + knightDetail.tasksFailed) > 0 && (
+                  <StatCard
+                    icon={<BarChart2 className="w-4 h-4" />}
+                    label="Success Rate"
+                    value={`${Math.round((knightDetail.tasksCompleted / (knightDetail.tasksCompleted + knightDetail.tasksFailed)) * 100)}%`}
+                    color="text-blue-400"
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Skills List (from CRD skillsList field) */}
+          {knightDetail?.skillsList && knightDetail.skillsList.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                <Tag className="w-4 h-4" />
+                Skills ({knightDetail.skillsList.length})
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {knightDetail.skillsList.map((skill, i) => (
+                  <span
+                    key={skill}
+                    className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs border ${
+                      i % 2 === 0
+                        ? 'bg-blue-500/10 text-blue-300 border-blue-500/20'
+                        : 'bg-purple-500/10 text-purple-300 border-purple-500/20'
+                    }`}
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Conditions */}
+          {knightDetail?.conditions && knightDetail.conditions.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                <Activity className="w-4 h-4" />
+                Conditions
+              </h3>
+              <div className="bg-roundtable-slate border border-roundtable-steel/50 rounded-lg overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-roundtable-steel/50">
+                      <th className="text-left text-gray-500 font-medium px-3 py-2">Type</th>
+                      <th className="text-left text-gray-500 font-medium px-3 py-2">Status</th>
+                      <th className="text-left text-gray-500 font-medium px-3 py-2 hidden sm:table-cell">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {knightDetail.conditions.map((cond: KnightCondition, i: number) => {
+                      const statusColor =
+                        cond.status === 'True' ? 'text-green-400 bg-green-500/10 border-green-500/20' :
+                        cond.status === 'False' ? 'text-red-400 bg-red-500/10 border-red-500/20' :
+                        'text-yellow-400 bg-yellow-500/10 border-yellow-500/20'
+                      return (
+                        <tr key={cond.type} className={i < knightDetail.conditions!.length - 1 ? 'border-b border-roundtable-steel/30' : ''}>
+                          <td className="px-3 py-2 text-gray-200 font-medium">{cond.type}</td>
+                          <td className="px-3 py-2">
+                            <span className={`px-2 py-0.5 rounded-full border ${statusColor}`}>{cond.status}</span>
+                          </td>
+                          <td className="px-3 py-2 text-gray-400 font-mono hidden sm:table-cell">{cond.reason || cond.message || '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

@@ -1,14 +1,7 @@
 import { authFetch } from '../lib/auth'
 import { useState, useEffect } from 'react'
-import { Scroll, Clock, History, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
-import { getKnightConfig, KNIGHT_CONFIG, knightNameForDomain } from '../lib/knights'
-
-interface QuestHistory {
-  type: string
-  subject: string
-  data: Record<string, unknown>
-  timestamp: string
-}
+import { Scroll, Clock } from 'lucide-react'
+import { getKnightConfig, KNIGHT_CONFIG } from '../lib/knights'
 
 export function TasksPage() {
   const [knight, setKnight] = useState('galahad')
@@ -21,8 +14,6 @@ export function TasksPage() {
     status: string
     timestamp: string
   }>>([])
-  const [history, setHistory] = useState<QuestHistory[]>([])
-  const [historyLoading, setHistoryLoading] = useState(false)
   const [fleetPrefix, setFleetPrefix] = useState('fleet-a')
 
   const config = getKnightConfig(knight)
@@ -37,19 +28,6 @@ export function TasksPage() {
       })
       .catch(() => {})
   }, [])
-
-  const loadHistory = () => {
-    setHistoryLoading(true)
-    authFetch('/api/tasks')
-      .then((r) => r.json())
-      .then((data) => {
-        setHistory(data.results || data.tasks || data || [])
-      })
-      .catch(() => {})
-      .finally(() => setHistoryLoading(false))
-  }
-
-  useEffect(() => { loadHistory() }, [])
 
   const dispatch = async () => {
     if (!task.trim()) return
@@ -82,7 +60,7 @@ export function TasksPage() {
     <div>
       <h1 className="text-3xl font-bold text-white flex items-center gap-3 mb-8">
         <Scroll className="w-8 h-8 text-roundtable-gold" />
-        Quest Dispatch
+        Dispatch
       </h1>
 
       {/* Dispatch form */}
@@ -164,85 +142,6 @@ export function TasksPage() {
         })}
       </div>
 
-      {/* Quest History from JetStream */}
-      <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-        <History className="w-5 h-5 text-roundtable-gold" />
-        Quest History
-        <button onClick={loadHistory} className="ml-auto text-gray-400 hover:text-roundtable-gold transition-colors p-1" title="Refresh history">
-          <RefreshCw className={`w-4 h-4 ${historyLoading ? 'animate-spin' : ''}`} />
-        </button>
-      </h2>
-      <div className="space-y-3">
-        {historyLoading && (
-          <div className="text-center py-8">
-            <div className="animate-spin w-6 h-6 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-2" />
-            <p className="text-gray-500 text-sm">Loading quest history from JetStream...</p>
-          </div>
-        )}
-        {!historyLoading && history.length === 0 && (
-          <p className="text-gray-500 text-center py-8">No quest history found in JetStream.</p>
-        )}
-        {history.map((h, i) => {
-          const parts = (h.subject || '').split('.')
-          const domain = parts[2] || 'unknown'
-          const isResult = (h.type || h.subject || '').includes('result')
-          const data = typeof h.data === 'string' ? (() => { try { return JSON.parse(h.data as unknown as string) } catch { return h.data } })() : (h.data || {})
-          const knightName = knightNameForDomain(domain) || (data as Record<string, unknown>).knight as string || domain
-          const cfg = getKnightConfig(knightName)
-          const taskText = (data as Record<string, unknown>).task as string || (data as Record<string, unknown>).summary as string || (data as Record<string, unknown>).result as string || ''
-          const rawCost = (data as Record<string, unknown>).cost
-          const cost = typeof rawCost === 'number' ? rawCost : undefined
-          const success = (data as Record<string, unknown>).success as boolean | undefined
-          const duration = (data as Record<string, unknown>).duration as string | undefined
-
-          return (
-            <div
-              key={i}
-              className={`bg-roundtable-slate border ${isResult ? 'border-green-500/20' : 'border-blue-500/20'} rounded-lg p-4`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className={cfg.color}>{cfg.emoji}</span>
-                  <span className="font-medium text-white capitalize">{knightName}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded font-medium ${isResult ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'}`}>
-                    {isResult ? 'RESULT' : 'TASK'}
-                  </span>
-                  {success !== undefined && (
-                    success ? <CheckCircle className="w-3.5 h-3.5 text-green-400" /> : <XCircle className="w-3.5 h-3.5 text-red-400" />
-                  )}
-                </div>
-                <div className="flex items-center gap-2 text-xs text-gray-500">
-                  {duration && <span>{duration}</span>}
-                  {cost != null && cost > 0 && <span className="text-roundtable-gold">${cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2)}</span>}
-                  {/* Replay button (#52) */}
-                  {!isResult && taskText && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setTask(taskText)
-                        if (knightName && KNIGHT_CONFIG[knightName]) setKnight(knightName)
-                        window.scrollTo({ top: 0, behavior: 'smooth' })
-                      }}
-                      className="text-roundtable-gold hover:text-yellow-300 transition-colors"
-                      title="Replay this quest"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                    </button>
-                  )}
-                  <Clock className="w-3 h-3" />
-                  {h.timestamp ? new Date(h.timestamp).toLocaleString() : '—'}
-                </div>
-              </div>
-              {taskText && <p className="text-sm text-gray-300 line-clamp-2">{taskText}</p>}
-              {!taskText && (
-                <pre className="text-xs text-gray-400 overflow-auto max-h-24 font-mono">
-                  {JSON.stringify(data, null, 2)}
-                </pre>
-              )}
-            </div>
-          )
-        })}
-      </div>
     </div>
   )
 }
