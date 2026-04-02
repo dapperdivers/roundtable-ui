@@ -1018,15 +1018,48 @@ func TestEnvOr(t *testing.T) {
 	}
 }
 
-// TestBuildKnightStatus tests the knight status builder
-func TestBuildKnightStatus(t *testing.T) {
-	pod := corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{
-				"app.kubernetes.io/instance": "lancelot",
-				"roundtable.io/domain":       "finance",
+// TestBuildKnightStatusWithCRD tests the enriched knight status builder with CRD data
+func TestBuildKnightStatusWithCRD(t *testing.T) {
+	now := metav1.Now()
+	
+	// Create Knight CR with enriched fields
+	cr := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "ai.roundtable.io/v1alpha1",
+			"kind":       "Knight",
+			"metadata": map[string]interface{}{
+				"name":              "galahad",
+				"namespace":         "test-namespace",
+				"creationTimestamp": now.Format(time.RFC3339),
 			},
-			CreationTimestamp: metav1.Time{Time: time.Now().Add(-2 * time.Hour)},
+			"spec": map[string]interface{}{
+				"domain":      "security",
+				"model":       "anthropic/claude-3-5-sonnet-20241022",
+				"runtime":     "pi@0.14.5",
+				"suspended":   false,
+				"concurrency": int64(3),
+				"taskTimeout": int64(600),
+				"skills":      []interface{}{"vulnerability-scan", "penetration-test"},
+			},
+			"status": map[string]interface{}{
+				"phase":          "Ready",
+				"tasksCompleted": int64(150),
+				"tasksFailed":    int64(5),
+				"totalCost":      "$12.45",
+			},
+		},
+	}
+	cr.SetCreationTimestamp(now)
+	
+	// Create matching pod
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "galahad-abc123",
+			Namespace:         "test-namespace",
+			CreationTimestamp: now,
+			Labels: map[string]string{
+				"app.kubernetes.io/instance": "galahad",
+			},
 		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
@@ -1044,14 +1077,15 @@ func TestBuildKnightStatus(t *testing.T) {
 		},
 	}
 	
-	status := buildKnightStatus(pod)
+	status := buildKnightStatus(cr, pod)
 	
-	if status.Name != "lancelot" {
-		t.Errorf("expected name 'lancelot', got '%s'", status.Name)
+	// Test basic fields
+	if status.Name != "galahad" {
+		t.Errorf("expected name 'galahad', got '%s'", status.Name)
 	}
 	
-	if status.Domain != "finance" {
-		t.Errorf("expected domain 'finance', got '%s'", status.Domain)
+	if status.Domain != "security" {
+		t.Errorf("expected domain 'security', got '%s'", status.Domain)
 	}
 	
 	if status.Status != "online" {
@@ -1064,6 +1098,179 @@ func TestBuildKnightStatus(t *testing.T) {
 	
 	if !status.Ready {
 		t.Error("expected ready=true")
+	}
+	
+	// Test enriched CRD fields
+	if status.Phase != "Ready" {
+		t.Errorf("expected phase 'Ready', got '%s'", status.Phase)
+	}
+	
+	if status.Model != "anthropic/claude-3-5-sonnet-20241022" {
+		t.Errorf("expected model 'anthropic/claude-3-5-sonnet-20241022', got '%s'", status.Model)
+	}
+	
+	if status.Runtime != "pi@0.14.5" {
+		t.Errorf("expected runtime 'pi@0.14.5', got '%s'", status.Runtime)
+	}
+	
+	if status.Suspended {
+		t.Error("expected suspended=false")
+	}
+	
+	if status.TasksCompleted != 150 {
+		t.Errorf("expected 150 tasks completed, got %d", status.TasksCompleted)
+	}
+	
+	if status.TasksFailed != 5 {
+		t.Errorf("expected 5 tasks failed, got %d", status.TasksFailed)
+	}
+	
+	if status.TotalCost != "$12.45" {
+		t.Errorf("expected totalCost '$12.45', got '%s'", status.TotalCost)
+	}
+	
+	if status.Concurrency != 3 {
+		t.Errorf("expected concurrency 3, got %d", status.Concurrency)
+	}
+	
+	if status.TaskTimeout != 600 {
+		t.Errorf("expected taskTimeout 600, got %d", status.TaskTimeout)
+	}
+	
+	if len(status.SkillsList) != 2 {
+		t.Errorf("expected 2 skills, got %d", len(status.SkillsList))
+	}
+}
+
+// TestFleetHandlerEnrichedFields tests that /api/fleet returns enriched Knight CRD fields
+func TestFleetHandlerEnrichedFields(t *testing.T) {
+	router := setupTestRouter()
+	namespace := "test-namespace"
+	
+	now := metav1.Now()
+	
+	// Create Knight CR with enriched fields
+	knight := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "ai.roundtable.io/v1alpha1",
+			"kind":       "Knight",
+			"metadata": map[string]interface{}{
+				"name":              "percival",
+				"namespace":         namespace,
+				"creationTimestamp": now.Format(time.RFC3339),
+			},
+			"spec": map[string]interface{}{
+				"domain":      "infrastructure",
+				"model":       "openai/gpt-4o",
+				"runtime":     "pi@0.14.5",
+				"suspended":   false,
+				"concurrency": int64(5),
+				"taskTimeout": int64(900),
+				"skills":      []interface{}{"kubernetes-ops", "terraform"},
+			},
+			"status": map[string]interface{}{
+				"phase":          "Ready",
+				"tasksCompleted": int64(250),
+				"tasksFailed":    int64(10),
+				"totalCost":      "$45.67",
+			},
+		},
+	}
+	knight.SetCreationTimestamp(now)
+	
+	_, err := dynClient.Resource(knightGVR).Namespace(namespace).Create(nil, knight, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create knight CR: %v", err)
+	}
+	
+	// Create matching pod
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "percival-xyz123",
+			Namespace:         namespace,
+			CreationTimestamp: now,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":     "knight",
+				"app.kubernetes.io/instance": "percival",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "knight",
+					Image: "ghcr.io/dapperdivers/knight:latest",
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:         "knight",
+					Image:        "ghcr.io/dapperdivers/knight:latest",
+					Ready:        true,
+					RestartCount: 0,
+				},
+			},
+		},
+	}
+	
+	k8sClient = k8sfake.NewSimpleClientset(pod)
+	
+	req := httptest.NewRequest("GET", "/api/fleet", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	
+	var knights []KnightStatus
+	if err := json.Unmarshal(w.Body.Bytes(), &knights); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	
+	if len(knights) != 1 {
+		t.Fatalf("expected 1 knight, got %d", len(knights))
+	}
+	
+	k := knights[0]
+	
+	// Verify enriched fields are present
+	if k.Phase != "Ready" {
+		t.Errorf("expected phase 'Ready', got '%s'", k.Phase)
+	}
+	
+	if k.Model != "openai/gpt-4o" {
+		t.Errorf("expected model 'openai/gpt-4o', got '%s'", k.Model)
+	}
+	
+	if k.Runtime != "pi@0.14.5" {
+		t.Errorf("expected runtime 'pi@0.14.5', got '%s'", k.Runtime)
+	}
+	
+	if k.TasksCompleted != 250 {
+		t.Errorf("expected tasksCompleted 250, got %d", k.TasksCompleted)
+	}
+	
+	if k.TasksFailed != 10 {
+		t.Errorf("expected tasksFailed 10, got %d", k.TasksFailed)
+	}
+	
+	if k.TotalCost != "$45.67" {
+		t.Errorf("expected totalCost '$45.67', got '%s'", k.TotalCost)
+	}
+	
+	if k.Concurrency != 5 {
+		t.Errorf("expected concurrency 5, got %d", k.Concurrency)
+	}
+	
+	if k.TaskTimeout != 900 {
+		t.Errorf("expected taskTimeout 900, got %d", k.TaskTimeout)
+	}
+	
+	if len(k.SkillsList) != 2 {
+		t.Errorf("expected 2 skills, got %d", len(k.SkillsList))
 	}
 }
 
@@ -1142,5 +1349,508 @@ func TestGetInt(t *testing.T) {
 	
 	if getInt(obj, "missing") != 0 {
 		t.Error("expected 0 for missing key")
+	}
+}
+
+// TestRoundTableHandlerWithWarmPoolAndPolicies tests enriched RoundTable fields
+func TestRoundTableHandlerWithWarmPoolAndPolicies(t *testing.T) {
+	router := setupTestRouter()
+	
+	// Create RoundTable CR with warmPool and policies
+	roundtable := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "ai.roundtable.io/v1alpha1",
+			"kind":       "RoundTable",
+			"metadata": map[string]interface{}{
+				"name":      "table-b",
+				"namespace": "test-namespace",
+			},
+			"spec": map[string]interface{}{
+				"description": "Production Round Table",
+				"nats": map[string]interface{}{
+					"subjectPrefix": "fleet-b",
+				},
+				"policies": map[string]interface{}{
+					"maxConcurrentTasks": int64(100),
+					"costBudgetUSD":      "500.00",
+					"maxKnights":         int64(20),
+					"maxMissions":        int64(10),
+				},
+				"suspended":  false,
+				"ephemeral":  false,
+			},
+			"status": map[string]interface{}{
+				"phase":               "Ready",
+				"knightsReady":        int64(8),
+				"knightsTotal":        int64(10),
+				"totalCost":           "$125.50",
+				"totalTasksCompleted": int64(5000),
+				"activeMissions":      int64(3),
+				"warmPool": map[string]interface{}{
+					"available":    int64(5),
+					"provisioning": int64(2),
+					"claimed":      int64(3),
+				},
+			},
+		},
+	}
+	
+	_, err := dynClient.Resource(roundTableGVR).Namespace("test-namespace").Create(nil, roundtable, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create roundtable: %v", err)
+	}
+	
+	req := httptest.NewRequest("GET", "/api/roundtables", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	
+	var tables []RoundTableSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &tables); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	
+	// Should have 2 tables (one from earlier test + this one)
+	if len(tables) < 1 {
+		t.Fatalf("expected at least 1 roundtable, got %d", len(tables))
+	}
+	
+	// Find our table
+	var rt *RoundTableSummary
+	for i := range tables {
+		if tables[i].Name == "table-b" {
+			rt = &tables[i]
+			break
+		}
+	}
+	
+	if rt == nil {
+		t.Fatal("table-b not found in response")
+	}
+	
+	// Verify enriched fields
+	if rt.Phase != "Ready" {
+		t.Errorf("expected phase 'Ready', got '%s'", rt.Phase)
+	}
+	
+	if rt.Description != "Production Round Table" {
+		t.Errorf("expected description 'Production Round Table', got '%s'", rt.Description)
+	}
+	
+	if rt.NATSPrefix != "fleet-b" {
+		t.Errorf("expected NATS prefix 'fleet-b', got '%s'", rt.NATSPrefix)
+	}
+	
+	// Test WarmPool
+	if rt.WarmPool == nil {
+		t.Fatal("expected warmPool to be present")
+	}
+	
+	if rt.WarmPool.Available != 5 {
+		t.Errorf("expected warmPool.available 5, got %d", rt.WarmPool.Available)
+	}
+	
+	if rt.WarmPool.Provisioning != 2 {
+		t.Errorf("expected warmPool.provisioning 2, got %d", rt.WarmPool.Provisioning)
+	}
+	
+	if rt.WarmPool.Claimed != 3 {
+		t.Errorf("expected warmPool.claimed 3, got %d", rt.WarmPool.Claimed)
+	}
+	
+	// Test Policies
+	if rt.Policies == nil {
+		t.Fatal("expected policies to be present")
+	}
+	
+	if rt.Policies.MaxConcurrentTasks != 100 {
+		t.Errorf("expected maxConcurrentTasks 100, got %d", rt.Policies.MaxConcurrentTasks)
+	}
+	
+	if rt.Policies.CostBudgetUSD != "500.00" {
+		t.Errorf("expected costBudgetUSD '500.00', got '%s'", rt.Policies.CostBudgetUSD)
+	}
+	
+	if rt.Policies.MaxKnights != 20 {
+		t.Errorf("expected maxKnights 20, got %d", rt.Policies.MaxKnights)
+	}
+	
+	if rt.Policies.MaxMissions != 10 {
+		t.Errorf("expected maxMissions 10, got %d", rt.Policies.MaxMissions)
+	}
+	
+	// Test other status fields
+	if rt.KnightsReady != 8 {
+		t.Errorf("expected knightsReady 8, got %d", rt.KnightsReady)
+	}
+	
+	if rt.KnightsTotal != 10 {
+		t.Errorf("expected knightsTotal 10, got %d", rt.KnightsTotal)
+	}
+	
+	if rt.TotalTasksCompleted != 5000 {
+		t.Errorf("expected totalTasksCompleted 5000, got %d", rt.TotalTasksCompleted)
+	}
+	
+	if rt.ActiveMissions != 3 {
+		t.Errorf("expected activeMissions 3, got %d", rt.ActiveMissions)
+	}
+}
+
+// TestMissionHandlerWithKnightAndChainStatuses tests enriched Mission fields
+func TestMissionHandlerWithKnightAndChainStatuses(t *testing.T) {
+	router := setupTestRouter()
+	
+	// Create Mission CR with knight and chain statuses
+	mission := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "ai.roundtable.io/v1alpha1",
+			"kind":       "Mission",
+			"metadata": map[string]interface{}{
+				"name":      "enriched-mission",
+				"namespace": "test-namespace",
+			},
+			"spec": map[string]interface{}{
+				"objective":      "Test enriched mission",
+				"costBudgetUSD":  "100.00",
+				"roundTableRef":  "table-a",
+				"ttl":            int64(3600),
+				"timeout":        int64(1800),
+				"cleanupPolicy":  "Retain",
+				"recruitExisting": true,
+				"retainResults":   true,
+				"knights": []interface{}{
+					map[string]interface{}{"name": "galahad"},
+					map[string]interface{}{"name": "percival"},
+				},
+				"chains": []interface{}{
+					map[string]interface{}{"name": "recon-chain"},
+				},
+			},
+			"status": map[string]interface{}{
+				"phase":             "Running",
+				"totalCost":         "$25.00",
+				"startedAt":         "2024-01-01T10:00:00Z",
+				"resultsConfigMap":  "enriched-mission-results",
+				"knightStatuses": []interface{}{
+					map[string]interface{}{
+						"name":           "galahad",
+						"ready":          true,
+						"tasksCompleted": int64(50),
+						"ephemeral":      false,
+					},
+					map[string]interface{}{
+						"name":           "percival",
+						"ready":          true,
+						"tasksCompleted": int64(30),
+						"ephemeral":      true,
+					},
+				},
+				"chainStatuses": []interface{}{
+					map[string]interface{}{
+						"name":        "recon-chain",
+						"chainCRName": "enriched-mission-recon-chain",
+						"phase":       "Running",
+					},
+				},
+			},
+		},
+	}
+	
+	_, err := dynClient.Resource(missionGVR).Namespace("test-namespace").Create(nil, mission, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create mission: %v", err)
+	}
+	
+	req := httptest.NewRequest("GET", "/api/missions/enriched-mission", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	
+	var m MissionSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	
+	// Verify basic fields
+	if m.Name != "enriched-mission" {
+		t.Errorf("expected name 'enriched-mission', got '%s'", m.Name)
+	}
+	
+	if m.Phase != "Running" {
+		t.Errorf("expected phase 'Running', got '%s'", m.Phase)
+	}
+	
+	if m.CleanupPolicy != "Retain" {
+		t.Errorf("expected cleanupPolicy 'Retain', got '%s'", m.CleanupPolicy)
+	}
+	
+	if !m.RecruitExisting {
+		t.Error("expected recruitExisting=true")
+	}
+	
+	if !m.RetainResults {
+		t.Error("expected retainResults=true")
+	}
+	
+	if m.ResultsConfigMap != "enriched-mission-results" {
+		t.Errorf("expected resultsConfigMap 'enriched-mission-results', got '%s'", m.ResultsConfigMap)
+	}
+	
+	// Test KnightStatuses
+	if len(m.KnightStatuses) != 2 {
+		t.Fatalf("expected 2 knight statuses, got %d", len(m.KnightStatuses))
+	}
+	
+	// Find galahad
+	var galahad *MissionKnightStatusDTO
+	for i := range m.KnightStatuses {
+		if m.KnightStatuses[i].Name == "galahad" {
+			galahad = &m.KnightStatuses[i]
+			break
+		}
+	}
+	
+	if galahad == nil {
+		t.Fatal("galahad not found in knightStatuses")
+	}
+	
+	if !galahad.Ready {
+		t.Error("expected galahad ready=true")
+	}
+	
+	if galahad.TasksCompleted != 50 {
+		t.Errorf("expected galahad tasksCompleted 50, got %d", galahad.TasksCompleted)
+	}
+	
+	if galahad.Ephemeral {
+		t.Error("expected galahad ephemeral=false")
+	}
+	
+	// Find percival
+	var percival *MissionKnightStatusDTO
+	for i := range m.KnightStatuses {
+		if m.KnightStatuses[i].Name == "percival" {
+			percival = &m.KnightStatuses[i]
+			break
+		}
+	}
+	
+	if percival == nil {
+		t.Fatal("percival not found in knightStatuses")
+	}
+	
+	if !percival.Ephemeral {
+		t.Error("expected percival ephemeral=true")
+	}
+	
+	// Test ChainStatuses
+	if len(m.ChainStatuses) != 1 {
+		t.Fatalf("expected 1 chain status, got %d", len(m.ChainStatuses))
+	}
+	
+	chain := m.ChainStatuses[0]
+	if chain.Name != "recon-chain" {
+		t.Errorf("expected chain name 'recon-chain', got '%s'", chain.Name)
+	}
+	
+	if chain.ChainCRName != "enriched-mission-recon-chain" {
+		t.Errorf("expected chainCRName 'enriched-mission-recon-chain', got '%s'", chain.ChainCRName)
+	}
+	
+	if chain.Phase != "Running" {
+		t.Errorf("expected chain phase 'Running', got '%s'", chain.Phase)
+	}
+}
+
+// TestInputValidation tests NATS injection prevention
+func TestInputValidation(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		valid bool
+	}{
+		{"valid knight name", "galahad", true},
+		{"valid with hyphen", "knight-dev", true},
+		{"valid with number", "knight1", true},
+		{"NATS wildcard injection", "fleet.>", false},
+		{"NATS subject injection", "fleet.tasks.*", false},
+		{"path traversal", "../../../etc/passwd", false},
+		{"starts with number", "1knight", false},
+		{"special characters", "knight@test!", false},
+		{"too long", strings.Repeat("a", 64), false},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := validKnightName.MatchString(tt.input)
+			if result != tt.valid {
+				t.Errorf("validKnightName(%s) = %v, expected %v", tt.input, result, tt.valid)
+			}
+		})
+	}
+}
+
+// TestTaskDispatchValidation tests task dispatch input validation
+func TestTaskDispatchValidation(t *testing.T) {
+	router := setupTestRouter()
+	
+	// Set up NATS mock (nil will cause proper error)
+	nc = nil
+	
+	tests := []struct {
+		name           string
+		requestBody    map[string]interface{}
+		expectedStatus int
+	}{
+		{
+			name: "valid task dispatch",
+			requestBody: map[string]interface{}{
+				"knight": "galahad",
+				"domain": "security",
+				"task":   "Scan for vulnerabilities",
+			},
+			expectedStatus: http.StatusServiceUnavailable, // NATS not available in test
+		},
+		{
+			name: "invalid knight name - NATS injection attempt",
+			requestBody: map[string]interface{}{
+				"knight": "fleet.>",
+				"domain": "security",
+				"task":   "malicious task",
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name: "invalid domain - NATS injection attempt",
+			requestBody: map[string]interface{}{
+				"knight": "galahad",
+				"domain": "tasks.*",
+				"task":   "malicious task",
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name: "task too long",
+			requestBody: map[string]interface{}{
+				"knight": "galahad",
+				"domain": "security",
+				"task":   strings.Repeat("a", 10001),
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name: "empty task",
+			requestBody: map[string]interface{}{
+				"knight": "galahad",
+				"domain": "security",
+				"task":   "",
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+	}
+	
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest("POST", "/api/tasks/dispatch", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			
+			router.ServeHTTP(w, req)
+			
+			if w.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d (body: %s)", tt.expectedStatus, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// TestAuthMiddlewareProtectedEndpoints verifies all API endpoints require auth when enabled
+func TestAuthMiddlewareProtectedEndpoints(t *testing.T) {
+	os.Setenv("DASHBOARD_API_KEY", "test-secret-key")
+	defer os.Unsetenv("DASHBOARD_API_KEY")
+	
+	router := setupTestRouter()
+	r := mux.NewRouter()
+	r.Use(authMiddleware)
+	r.PathPrefix("/api").Handler(router)
+	
+	protectedEndpoints := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/api/fleet"},
+		{"GET", "/api/fleet/galahad"},
+		{"GET", "/api/missions"},
+		{"GET", "/api/chains"},
+		{"GET", "/api/roundtables"},
+		{"POST", "/api/missions"},
+		{"DELETE", "/api/missions/test"},
+		{"GET", "/api/config"},
+	}
+	
+	for _, ep := range protectedEndpoints {
+		t.Run(ep.method+" "+ep.path, func(t *testing.T) {
+			var body *bytes.Reader
+			if ep.method == "POST" {
+				body = bytes.NewReader([]byte(`{"name":"test","objective":"test"}`))
+			} else {
+				body = bytes.NewReader([]byte{})
+			}
+			
+			req := httptest.NewRequest(ep.method, ep.path, body)
+			req.Header.Set("Content-Type", "application/json")
+			// No auth header - should fail
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			
+			if w.Code != http.StatusUnauthorized {
+				t.Errorf("expected 401 Unauthorized without auth, got %d", w.Code)
+			}
+			
+			// With valid auth - should succeed (or at least not 401)
+			req = httptest.NewRequest(ep.method, ep.path, body)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer test-secret-key")
+			w = httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			
+			if w.Code == http.StatusUnauthorized {
+				t.Errorf("expected non-401 with valid auth, got %d", w.Code)
+			}
+		})
+	}
+}
+
+// TestHealthEndpointBypassesAuth verifies /api/health works without auth
+func TestHealthEndpointBypassesAuth(t *testing.T) {
+	os.Setenv("DASHBOARD_API_KEY", "secret")
+	defer os.Unsetenv("DASHBOARD_API_KEY")
+	
+	router := setupTestRouter()
+	r := mux.NewRouter()
+	r.Use(authMiddleware)
+	r.PathPrefix("/api").Handler(router)
+	
+	req := httptest.NewRequest("GET", "/api/health", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	
+	if w.Code != http.StatusOK {
+		t.Errorf("expected /api/health to return 200 without auth, got %d", w.Code)
+	}
+	
+	var response map[string]string
+	json.Unmarshal(w.Body.Bytes(), &response)
+	
+	if response["status"] != "ok" {
+		t.Errorf("expected status=ok, got %s", response["status"])
 	}
 }
