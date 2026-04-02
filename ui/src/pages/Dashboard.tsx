@@ -1,6 +1,6 @@
 import { authFetch } from '../lib/auth'
 import { useState, useEffect, useMemo } from 'react'
-import { Crown, Activity, DollarSign, Zap, AlertTriangle, Link2, ArrowRight } from 'lucide-react'
+import { Crown, Activity, DollarSign, Zap, AlertTriangle, Link2, ArrowRight, TrendingUp, Calendar, BarChart3, ChevronDown, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useFleet } from '../hooks/useFleet'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -13,15 +13,29 @@ interface ChainSummary {
   steps: { name: string; phase: string; knight: string }[]
 }
 
+interface CostEntry {
+  knight: string
+  cost: number
+  timestamp: string
+  taskId: string
+  success: boolean
+}
+
 function formatCost(cost: number): string {
   return cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`
 }
 
-export function DashboardPage() {
+function formatDate(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
+export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpanded?: boolean } = {}) {
   const { knights } = useFleet()
   const { events, connected } = useWebSocket()
   const [chains, setChains] = useState<ChainSummary[]>([])
   const [sessionCosts, setSessionCosts] = useState<{ total: number; perKnight: Record<string, number> }>({ total: 0, perKnight: {} })
+  const [costExpanded, setCostExpanded] = useState(defaultCostExpanded)
+  const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month'>('week')
 
   useEffect(() => {
     authFetch('/api/chains').then(r => r.json()).then(setChains).catch(() => {})
@@ -94,6 +108,65 @@ export function DashboardPage() {
 
     return { totalCost: mergedTotal, totalTasks, totalResults, failures, topKnights }
   }, [events, sessionCosts])
+
+  // Cost breakdown data for collapsible panel
+  const costEntries = useMemo((): CostEntry[] => {
+    const entries: CostEntry[] = []
+    for (const event of events) {
+      if (event.type !== 'result') continue
+      const data = (typeof event.data === 'string'
+        ? (() => { try { return JSON.parse(event.data as string) } catch { return {} } })()
+        : event.data || {}) as Record<string, unknown>
+      const cost = typeof data.cost === 'number' ? data.cost : 0
+      if (cost <= 0) continue
+      const parts = event.subject.split('.')
+      const domain = parts[2] || ''
+      entries.push({
+        knight: knightNameForDomain(domain) || domain,
+        cost,
+        timestamp: event.timestamp,
+        taskId: parts[3] || '',
+        success: data.success !== false,
+      })
+    }
+    return entries
+  }, [events])
+
+  const filteredCostEntries = useMemo(() => {
+    const now = Date.now()
+    const cutoff = timeRange === 'day' ? 24 * 60 * 60 * 1000
+      : timeRange === 'week' ? 7 * 24 * 60 * 60 * 1000
+      : 30 * 24 * 60 * 60 * 1000
+    return costEntries.filter(e => now - new Date(e.timestamp).getTime() <= cutoff)
+  }, [costEntries, timeRange])
+
+  const costPanelData = useMemo(() => {
+    const totalCost = filteredCostEntries.reduce((sum, e) => sum + e.cost, 0)
+    const byKnight: Record<string, { cost: number; tasks: number; failures: number }> = {}
+    for (const entry of filteredCostEntries) {
+      if (!byKnight[entry.knight]) byKnight[entry.knight] = { cost: 0, tasks: 0, failures: 0 }
+      byKnight[entry.knight].cost += entry.cost
+      byKnight[entry.knight].tasks++
+      if (!entry.success) byKnight[entry.knight].failures++
+    }
+    const costByKnight = Object.entries(byKnight)
+      .map(([knight, s]) => ({ knight, ...s }))
+      .sort((a, b) => b.cost - a.cost)
+
+    const days: Record<string, number> = {}
+    for (const entry of filteredCostEntries) {
+      const date = formatDate(new Date(entry.timestamp))
+      days[date] = (days[date] || 0) + entry.cost
+    }
+    const dailyCosts = Object.entries(days)
+      .map(([date, cost]) => ({ date, cost }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(-7)
+
+    const topTasks = [...filteredCostEntries].sort((a, b) => b.cost - a.cost).slice(0, 10)
+
+    return { totalCost, costByKnight, dailyCosts, topTasks }
+  }, [filteredCostEntries])
 
   const online = knights.filter(k => k.status === 'online').length
   const runningChains = chains.filter(c => c.phase === 'Running' || c.phase === 'StepRunning')
@@ -235,6 +308,173 @@ export function DashboardPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Cost Details — collapsible */}
+      <div className="mt-6 bg-roundtable-slate border border-roundtable-steel rounded-xl overflow-hidden">
+        <button
+          onClick={() => setCostExpanded(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 hover:bg-roundtable-steel/20 transition-colors"
+        >
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            <DollarSign className="w-5 h-5 text-roundtable-gold" />
+            Cost Details
+          </h2>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-gray-400">
+              {filteredCostEntries.length} tasks · {timeRange === 'day' ? 'Last 24h' : timeRange === 'week' ? 'Last 7 days' : 'Last 30 days'}
+            </span>
+            {costExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+          </div>
+        </button>
+
+        {costExpanded && (
+          <div className="px-5 pb-5">
+            {/* Time range + summary */}
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-4">
+                <span className="text-2xl font-bold text-roundtable-gold">{formatCost(costPanelData.totalCost)}</span>
+                <div className="flex gap-1.5">
+                  {(['day', 'week', 'month'] as const).map(range => (
+                    <button
+                      key={range}
+                      onClick={() => setTimeRange(range)}
+                      className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                        timeRange === range
+                          ? 'bg-roundtable-gold/20 text-roundtable-gold border border-roundtable-gold/30'
+                          : 'bg-roundtable-steel/50 text-gray-400 hover:text-gray-300'
+                      }`}
+                    >
+                      {range === 'day' ? 'Today' : range === 'week' ? 'Week' : 'Month'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-4 text-sm text-gray-400">
+                <span><span className="text-white font-medium">{filteredCostEntries.length}</span> tasks</span>
+                <span><span className="text-white font-medium">{costPanelData.costByKnight.length}</span> active knights</span>
+                <span>avg <span className="text-roundtable-gold font-medium">{filteredCostEntries.length > 0 ? formatCost(costPanelData.totalCost / filteredCostEntries.length) : '$0.00'}</span>/task</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              {/* Cost by Knight */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-roundtable-gold" /> Cost by Knight
+                </h3>
+                {costPanelData.costByKnight.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-6">No cost data available</p>
+                ) : (
+                  <div className="space-y-3">
+                    {costPanelData.costByKnight.map(({ knight, cost, tasks, failures }) => {
+                      const cfg = getKnightConfig(knight)
+                      const barWidth = (cost / (costPanelData.costByKnight[0]?.cost || 1)) * 100
+                      return (
+                        <div key={knight} className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <span className={cfg.color}>{cfg.emoji}</span>
+                              <span className="text-gray-300 capitalize">{knight}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-gray-500 text-xs">{tasks} tasks</span>
+                              {failures > 0 && <span className="text-red-400 text-xs">{failures} failed</span>}
+                              <span className="text-roundtable-gold font-medium">{formatCost(cost)}</span>
+                            </div>
+                          </div>
+                          <div className="h-2 bg-roundtable-navy rounded-full overflow-hidden">
+                            <div className="h-full bg-roundtable-gold/40 rounded-full transition-all" style={{ width: `${barWidth}%` }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Daily trend */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-blue-400" /> Daily Cost Trend
+                </h3>
+                {costPanelData.dailyCosts.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-6">No trend data available</p>
+                ) : (
+                  <div className="space-y-2">
+                    {costPanelData.dailyCosts.map(({ date, cost }) => {
+                      const maxCost = Math.max(...costPanelData.dailyCosts.map(d => d.cost), 1)
+                      return (
+                        <div key={date} className="space-y-1">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-gray-400">{date}</span>
+                            <span className="text-roundtable-gold font-medium">{formatCost(cost)}</span>
+                          </div>
+                          <div className="h-2 bg-roundtable-navy rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-400/40 rounded-full transition-all" style={{ width: `${(cost / maxCost) * 100}%` }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Most expensive tasks */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-green-400" /> Most Expensive Tasks
+              </h3>
+              {costPanelData.topTasks.length === 0 ? (
+                <p className="text-gray-500 text-sm text-center py-6">No task data available</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-roundtable-steel">
+                        <th className="text-left text-gray-400 text-xs font-medium pb-2">Knight</th>
+                        <th className="text-left text-gray-400 text-xs font-medium pb-2">Task ID</th>
+                        <th className="text-left text-gray-400 text-xs font-medium pb-2">Time</th>
+                        <th className="text-right text-gray-400 text-xs font-medium pb-2">Cost</th>
+                        <th className="text-center text-gray-400 text-xs font-medium pb-2">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costPanelData.topTasks.map((task, i) => {
+                        const cfg = getKnightConfig(task.knight)
+                        return (
+                          <tr key={i} className="border-b border-roundtable-steel/30 last:border-0">
+                            <td className="py-2">
+                              <div className="flex items-center gap-2">
+                                <span className={cfg.color}>{cfg.emoji}</span>
+                                <span className="text-gray-300 text-sm capitalize">{task.knight}</span>
+                              </div>
+                            </td>
+                            <td className="py-2">
+                              <span className="text-gray-400 text-xs font-mono truncate max-w-[200px] block">{task.taskId}</span>
+                            </td>
+                            <td className="py-2">
+                              <span className="text-gray-500 text-xs">{new Date(task.timestamp).toLocaleTimeString()}</span>
+                            </td>
+                            <td className="py-2 text-right">
+                              <span className="text-roundtable-gold font-medium text-sm">{formatCost(task.cost)}</span>
+                            </td>
+                            <td className="py-2 text-center">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${task.success ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                {task.success ? 'Success' : 'Failed'}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
