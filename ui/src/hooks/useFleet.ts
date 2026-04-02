@@ -14,11 +14,22 @@ export interface Knight {
   restarts: number
   age: string
   image: string
-  skills: number
-  nixTools: number
-  labels: Record<string, string>
+  skills: number           // keep for backward compat
+  skillsList?: string[]    // actual skill names from CRD
+  nixTools: number         // keep for backward compat
   nixPackages?: string[]
   generatedSkills?: GeneratedSkill[]
+  labels: Record<string, string>
+  // fields from Knight CRD:
+  phase?: string           // Pending | Provisioning | Ready | Degraded | Suspended
+  model?: string           // e.g. claude-sonnet-4-20250514
+  runtime?: string         // deployment | sandbox
+  suspended?: boolean
+  tasksCompleted?: number
+  tasksFailed?: number
+  totalCost?: string
+  concurrency?: number
+  taskTimeout?: number
 }
 
 export function useFleet(refreshInterval = 10000) {
