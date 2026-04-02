@@ -175,7 +175,7 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
           )}
 
           {/* Configuration */}
-          {(knightDetail?.model || knightDetail?.runtime || knightDetail?.concurrencyLimit != null || knightDetail?.taskTimeout || knightDetail?.suspended) && (
+          {(knightDetail?.model || knightDetail?.runtime || knightDetail?.concurrency != null || knightDetail?.taskTimeout || knightDetail?.suspended) && (
             <div>
               <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
                 <Settings className="w-4 h-4" />
@@ -204,10 +204,10 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
                     }`}>{knightDetail.runtime}</span>
                   </div>
                 )}
-                {knightDetail.concurrencyLimit != null && (
+                {knightDetail.concurrency != null && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-400">Concurrency Limit</span>
-                    <span className="text-gray-200">{knightDetail.concurrencyLimit}</span>
+                    <span className="text-gray-200">{knightDetail.concurrency}</span>
                   </div>
                 )}
                 {knightDetail.taskTimeout && (
