@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Target, Clock, Users, Link2, DollarSign, FileText, Brain, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { Target, Clock, Users, Link2, DollarSign, FileText, Brain, ChevronDown, ChevronUp, Loader2, CheckCircle, XCircle, Zap, Hash } from 'lucide-react'
 import { authFetch } from '../lib/auth'
 import type { Mission } from '../hooks/useMissions'
 import { MissionPhaseBadge } from './MissionPhaseBadge'
@@ -58,9 +58,23 @@ function MissionResults({ name }: { name: string }) {
   )
 }
 
+// Chain phase colors (matching Chain page)
+const chainPhaseColors: Record<string, string> = {
+  Pending: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  Running: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  Succeeded: 'bg-green-500/20 text-green-400 border-green-500/30',
+  Failed: 'bg-red-500/20 text-red-400 border-red-500/30',
+  Paused: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+}
+
 export function MissionCard({ mission, onClick }: MissionCardProps) {
   const [showResults, setShowResults] = useState(false)
   const [showPlanOutput, setShowPlanOutput] = useState(false)
+  const [showKnights, setShowKnights] = useState(false)
+  const [showChains, setShowChains] = useState(false)
+  const [showCriteria, setShowCriteria] = useState(false)
+  const [showBriefing, setShowBriefing] = useState(false)
+  
   const isComplete = mission.phase === 'Succeeded' || mission.phase === 'Failed' || mission.phase === 'Expired'
   const isPlanning = mission.phase === 'Planning'
   
@@ -218,7 +232,9 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-1 text-gray-500">
           <Clock className="w-3 h-3" />
-          {isComplete ? (
+          {isComplete && mission.completedAt ? (
+            <span>Completed {formatRelativeTime(mission.completedAt)}</span>
+          ) : isComplete ? (
             <span>Duration: {formatDuration(mission.startedAt, mission.expiresAt)}</span>
           ) : mission.startedAt ? (
             <span>Started {formatRelativeTime(mission.startedAt)}</span>
@@ -235,6 +251,131 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
           </div>
         )}
       </div>
+
+      {/* Knights Statuses */}
+      {mission.knightStatuses && mission.knightStatuses.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-roundtable-steel/50">
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowKnights(!showKnights) }}
+            className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-300 transition-colors mb-2 w-full"
+          >
+            {showKnights ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <Users className="w-3 h-3" />
+            <span className="font-medium">Knights ({mission.knightStatuses.length})</span>
+          </button>
+          {showKnights && (
+            <div className="space-y-2">
+              {mission.knightStatuses.map((knight) => {
+                const config = getKnightConfig(knight.name)
+                return (
+                  <div key={knight.name} className="bg-roundtable-navy/50 rounded-lg p-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{config.emoji}</span>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm text-white font-medium capitalize">{knight.name}</span>
+                          {knight.ephemeral && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 flex items-center gap-0.5">
+                              <Zap className="w-2.5 h-2.5" />
+                              ephemeral
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <div className="flex items-center gap-1">
+                            {knight.ready ? (
+                              <CheckCircle className="w-3 h-3 text-green-400" />
+                            ) : (
+                              <XCircle className="w-3 h-3 text-red-400" />
+                            )}
+                            <span className={`text-xs ${knight.ready ? 'text-green-400' : 'text-red-400'}`}>
+                              {knight.ready ? 'Ready' : 'Not Ready'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-gray-400">
+                            <Hash className="w-3 h-3" />
+                            <span>{knight.tasksCompleted} tasks</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Chain Statuses */}
+      {mission.chainStatuses && mission.chainStatuses.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-roundtable-steel/50">
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowChains(!showChains) }}
+            className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-300 transition-colors mb-2 w-full"
+          >
+            {showChains ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <Link2 className="w-3 h-3" />
+            <span className="font-medium">Chains ({mission.chainStatuses.length})</span>
+          </button>
+          {showChains && (
+            <div className="space-y-2">
+              {mission.chainStatuses.map((chain) => (
+                <div key={chain.chainCRName} className="bg-roundtable-navy/50 rounded-lg p-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Link2 className="w-4 h-4 text-gray-400" />
+                    <div>
+                      <span className="text-sm text-white font-medium">{chain.name}</span>
+                      <div className="text-xs text-gray-500 font-mono">{chain.chainCRName}</div>
+                    </div>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded border ${chainPhaseColors[chain.phase] || chainPhaseColors.Pending}`}>
+                    {chain.phase}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Success Criteria */}
+      {mission.successCriteria && (
+        <div className="mt-3 pt-3 border-t border-roundtable-steel/50">
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowCriteria(!showCriteria) }}
+            className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-300 transition-colors mb-2 w-full"
+          >
+            {showCriteria ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <Target className="w-3 h-3" />
+            <span className="font-medium">Success Criteria</span>
+          </button>
+          {showCriteria && (
+            <div className="bg-roundtable-navy/50 rounded-lg p-3 border border-green-500/20">
+              <p className="text-xs text-gray-300 whitespace-pre-wrap">{mission.successCriteria}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Briefing */}
+      {mission.briefing && (
+        <div className="mt-3 pt-3 border-t border-roundtable-steel/50">
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowBriefing(!showBriefing) }}
+            className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-300 transition-colors mb-2 w-full"
+          >
+            {showBriefing ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            <FileText className="w-3 h-3" />
+            <span className="font-medium">Briefing</span>
+          </button>
+          {showBriefing && (
+            <div className="bg-roundtable-navy/50 rounded-lg p-3 border border-blue-500/20">
+              <p className="text-xs text-gray-300 whitespace-pre-wrap">{mission.briefing}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* RoundTable */}
       <div className="mt-3 pt-3 border-t border-roundtable-steel/50 flex items-center justify-between">

@@ -11,6 +11,19 @@ export interface PlanningResult {
   reasoning?: string
 }
 
+export interface KnightStatus {
+  name: string
+  ready: boolean
+  tasksCompleted: number
+  ephemeral: boolean
+}
+
+export interface ChainStatus {
+  name: string
+  chainCRName: string
+  phase: string
+}
+
 export interface Mission {
   name: string
   namespace: string
@@ -27,6 +40,11 @@ export interface Mission {
   roundTableRef: string
   metaMission?: boolean
   planningResult?: PlanningResult
+  knightStatuses?: KnightStatus[]
+  chainStatuses?: ChainStatus[]
+  completedAt?: string
+  successCriteria?: string
+  briefing?: string
 }
 
 export function useMissions(refreshInterval = 10000) {
