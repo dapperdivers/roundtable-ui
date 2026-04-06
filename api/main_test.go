@@ -132,7 +132,8 @@ func testFleetHandler(namespace string) http.HandlerFunc {
 			if len(pod.Spec.Containers) == 0 {
 				continue
 			}
-			knights = append(knights, buildKnightStatus(pod))
+			podCopy := pod
+			knights = append(knights, buildKnightStatus(nil, &podCopy))
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -162,7 +163,7 @@ func testKnightHandler(namespace string) http.HandlerFunc {
 
 		// Build safe DTO
 		detail := KnightDetail{
-			KnightStatus: buildKnightStatus(pod),
+			KnightStatus: buildKnightStatus(nil, &pod),
 			Node:         pod.Spec.NodeName,
 			PodName:      pod.Name,
 			Phase:        string(pod.Status.Phase),
