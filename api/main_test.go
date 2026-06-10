@@ -937,6 +937,28 @@ func TestCapitalizeKnight(t *testing.T) {
 	}
 }
 
+// TestEventTimestamp tests payload timestamp extraction for event dedup
+func TestEventTimestamp(t *testing.T) {
+	want := time.Date(2026, 6, 1, 12, 30, 0, 0, time.UTC)
+	payload := []byte(`{"task_id":"galahad-ui-1","success":true,"timestamp":"2026-06-01T12:30:00Z"}`)
+	if got := eventTimestamp(payload); !got.Equal(want) {
+		t.Errorf("eventTimestamp = %v, expected %v", got, want)
+	}
+
+	// Missing / invalid timestamps fall back to roughly now
+	for _, data := range [][]byte{
+		[]byte(`{"task_id":"x"}`),
+		[]byte(`{"timestamp":"not-a-time"}`),
+		[]byte(`not json`),
+		nil,
+	} {
+		got := eventTimestamp(data)
+		if time.Since(got) > time.Minute || time.Until(got) > time.Minute {
+			t.Errorf("eventTimestamp(%q) = %v, expected approximately now", data, got)
+		}
+	}
+}
+
 // TestEnvOr tests the environment variable helper
 func TestEnvOr(t *testing.T) {
 	os.Setenv("TEST_VAR", "value")
