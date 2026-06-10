@@ -1,14 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { NatsEvent } from './useWebSocket'
-import { knightNameForDomain, getKnightConfig } from '../lib/knights'
-
-interface ResultData {
-  success?: boolean
-  error?: string
-  cost?: number
-  duration?: string
-  domain?: string
-}
+import { getKnightConfig } from '../lib/knights'
+import { parseEvent, resultFailureReason } from '../lib/events'
 
 export function useTaskNotifications(
   events: NatsEvent[],
@@ -32,23 +25,20 @@ export function useTaskNotifications(
     for (const event of newEvents) {
       if (event.type !== 'result') continue
 
-      const data = event.data as ResultData
-      // Extract domain from subject like "roundtable.security.result"
-      const parts = event.subject.split('.')
-      const domain = data?.domain || parts[2] || parts[1] || 'unknown'
-      const knightName = knightNameForDomain(domain)
-      const config = knightName ? getKnightConfig(knightName) : getKnightConfig(domain)
-      const displayName = knightName
-        ? knightName.charAt(0).toUpperCase() + knightName.slice(1)
-        : domain
+      const { knight, data } = parseEvent(event)
+      const config = getKnightConfig(knight || 'unknown')
+      const displayName = knight
+        ? knight.charAt(0).toUpperCase() + knight.slice(1)
+        : 'Unknown knight'
 
-      if (data.success === false || data.error) {
-        const reason = data.error || 'unknown error'
+      const reason = resultFailureReason(data)
+      if (reason) {
         addToast(`❌ ${displayName} failed: ${reason}`, 'error')
       } else {
         const cost = typeof data.cost === 'number' ? data.cost : null
         const costStr = cost ? ` ($${cost.toFixed(4)})` : ''
-        addToast(`${config.emoji} ${displayName} completed ${domain} task${costStr}`, 'success')
+        const domainStr = knight ? ` ${config.domain}` : ''
+        addToast(`${config.emoji} ${displayName} completed a${domainStr} task${costStr}`, 'success')
       }
     }
   }, [events, addToast])

@@ -5,7 +5,8 @@ import type { Knight } from '../hooks/useFleet'
 import { KnightCard } from '../components/KnightCard'
 import { KnightDetailDrawer } from '../components/KnightDetailDrawer'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { knightNameForDomain, getKnightConfig } from '../lib/knights'
+import { getKnightConfig } from '../lib/knights'
+import { parseEvent, resultFailureReason } from '../lib/events'
 
 export function FleetPage() {
   const { knights, loading, error, refresh } = useFleet()
@@ -29,9 +30,7 @@ export function FleetPage() {
     })
 
     for (const event of windowedEvents) {
-      const parts = event.subject.split('.')
-      const domain = parts[2] || ''
-      const name = knightNameForDomain(domain)
+      const name = parseEvent(event).knight
       if (!name) continue
 
       const ts = new Date(event.timestamp).getTime()
@@ -64,17 +63,16 @@ export function FleetPage() {
 
     // Mark busy: has task but fewer results than tasks in recent window
     for (const event of windowedEvents) {
-      const parts = event.subject.split('.')
-      const domain = parts[2] || ''
-      const name = knightNameForDomain(domain)
-      if (!name || event.type !== 'task') continue
+      if (event.type !== 'task') continue
+      const name = parseEvent(event).knight
+      if (!name) continue
       const ts = new Date(event.timestamp).getTime()
       if (now - ts > 60000) continue // only last 60s for busy detection
       if (activity[name]) {
         // Check if there's a result after this task
         const hasResult = events.some(e =>
           e.type === 'result' &&
-          knightNameForDomain(e.subject.split('.')[2] || '') === name &&
+          parseEvent(e).knight === name &&
           new Date(e.timestamp).getTime() > ts
         )
         if (!hasResult) activity[name].busy = true
@@ -92,17 +90,12 @@ export function FleetPage() {
 
     for (const event of events) {
       if (event.type !== 'result') continue
-      const data = (typeof event.data === 'string'
-        ? (() => { try { return JSON.parse(event.data as string) } catch { return {} } })()
-        : event.data || {}) as Record<string, unknown>
+      const { knight, data } = parseEvent(event)
       const cost = typeof data.cost === 'number' ? data.cost : 0
       if (cost > 0) {
         totalCost += cost
         taskCount++
-        const parts = event.subject.split('.')
-        const domain = parts[2] || ''
-        const name = knightNameForDomain(domain)
-        if (name) perKnight[name] = (perKnight[name] || 0) + cost
+        if (knight) perKnight[knight] = (perKnight[knight] || 0) + cost
       }
     }
     const topSpender = Object.entries(perKnight).sort((a, b) => b[1] - a[1])[0]
@@ -192,13 +185,7 @@ export function FleetPage() {
       {/* Error War Room (#45) */}
       {(() => {
         const errors = events
-          .filter(e => {
-            if (e.type !== 'result') return false
-            const data = (typeof e.data === 'string'
-              ? (() => { try { return JSON.parse(e.data as string) } catch { return {} } })()
-              : e.data || {}) as Record<string, unknown>
-            return data.success === false || !!data.error
-          })
+          .filter(e => e.type === 'result' && parseEvent(e).data.success === false)
           .slice(0, 5)
 
         if (errors.length === 0) return null
@@ -208,18 +195,13 @@ export function FleetPage() {
             <h3 className="text-sm font-medium text-red-400 mb-3">⚠️ Recent Failures ({errors.length})</h3>
             <div className="space-y-2">
               {errors.map((e, i) => {
-                const data = (typeof e.data === 'string'
-                  ? (() => { try { return JSON.parse(e.data as string) } catch { return {} } })()
-                  : e.data || {}) as Record<string, unknown>
-                const parts = e.subject.split('.')
-                const domain = parts[2] || ''
-                const name = knightNameForDomain(domain)
-                const cfg = name ? getKnightConfig(name) : null
+                const { knight, data } = parseEvent(e)
+                const cfg = knight ? getKnightConfig(knight) : null
                 return (
                   <div key={i} className="flex items-center gap-2 text-xs">
                     <span>{cfg?.emoji || '🤖'}</span>
-                    <span className="text-gray-300 capitalize">{name || domain}</span>
-                    <span className="text-red-400 truncate flex-1">{(data.error as string) || 'Task failed'}</span>
+                    <span className="text-gray-300 capitalize">{knight || 'unknown'}</span>
+                    <span className="text-red-400 truncate flex-1">{resultFailureReason(data) || 'Task failed'}</span>
                     <span className="text-gray-600 flex-shrink-0">{new Date(e.timestamp).toLocaleTimeString()}</span>
                   </div>
                 )
