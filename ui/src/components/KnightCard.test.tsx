@@ -48,7 +48,8 @@ describe('KnightCard', () => {
 
   it('renders ready state', () => {
     render(<KnightCard knight={mockKnight} />)
-    expect(screen.getByText('Ready')).toBeInTheDocument()
+    // 'Ready' appears in both the readiness cell and the phase badge
+    expect(screen.getAllByText('Ready').length).toBeGreaterThan(0)
   })
 
   it('renders not ready state when knight is not ready', () => {
@@ -225,8 +226,10 @@ describe('KnightCard', () => {
 
   // New CRD parity tests
   it('renders phase badge when phase is provided', () => {
-    render(<KnightCard knight={mockKnight} />)
-    expect(screen.getByText('Ready')).toBeInTheDocument()
+    const { container } = render(<KnightCard knight={mockKnight} />)
+    const badge = container.querySelector('.bg-green-500\\/20')
+    expect(badge).toBeInTheDocument()
+    expect(badge!.textContent).toBe('Ready')
   })
 
   it('renders Degraded phase with yellow styling', () => {
@@ -286,8 +289,9 @@ describe('KnightCard', () => {
   })
 
   it('displays total cost when provided', () => {
+    // totalCost is rendered verbatim from the CRD string
     render(<KnightCard knight={mockKnight} />)
-    expect(screen.getByText(/\$12\.45/)).toBeInTheDocument()
+    expect(screen.getByText('12.45')).toBeInTheDocument()
   })
 
   it('handles knight without optional CRD fields', () => {
@@ -305,7 +309,9 @@ describe('KnightCard', () => {
     }
     
     render(<KnightCard knight={minimalKnight} />)
-    expect(screen.getByText('minimal')).toBeInTheDocument()
+    // Unknown knights fall back to a config title equal to the name,
+    // so 'minimal' renders twice (name + title)
+    expect(screen.getAllByText('minimal').length).toBeGreaterThan(0)
     expect(screen.queryByText('SUSPENDED')).not.toBeInTheDocument()
   })
 })

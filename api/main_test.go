@@ -26,10 +26,10 @@ var fakeK8sClient *k8sfake.Clientset
 
 // setupTestRouter creates a test router with mocked dependencies
 func setupTestRouter() *mux.Router {
-	// Initialize mock K8s client
+	// Initialize mock K8s client and inject it into the handlers' global
 	fakeK8sClient = k8sfake.NewSimpleClientset()
-	// The handlers will use fakeK8sClient instead of k8sClient
-	
+	k8sClient = fakeK8sClient
+
 	// Initialize mock dynamic client with proper scheme
 	scheme := runtime.NewScheme()
 	
@@ -82,9 +82,11 @@ func setupTestRouter() *mux.Router {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}).Methods("GET")
 	
-	api.HandleFunc("/fleet", testFleetHandler(namespace)).Methods("GET")
-	api.HandleFunc("/fleet/{knight}", testKnightHandler(namespace)).Methods("GET")
+	api.HandleFunc("/fleet", fleetHandler(namespace)).Methods("GET")
+	api.HandleFunc("/fleet/{knight}", knightHandler(namespace)).Methods("GET")
 	api.HandleFunc("/fleet/{knight}/session", knightSessionHandler(fleetPrefix)).Methods("GET")
+
+	api.HandleFunc("/tasks/dispatch", taskDispatchHandler(fleetPrefix)).Methods("POST")
 	
 	api.HandleFunc("/chains", chainsHandler(namespace)).Methods("GET")
 	api.HandleFunc("/chains/{name}", chainDetailHandler(namespace)).Methods("GET")
@@ -107,92 +109,26 @@ func setupTestRouter() *mux.Router {
 	return r
 }
 
-// Test wrapper handlers that use the fake K8s client
-func testFleetHandler(namespace string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if fakeK8sClient == nil {
-			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
-			return
-		}
-
-		pods, err := fakeK8sClient.CoreV1().Pods(namespace).List(r.Context(), metav1.ListOptions{
-			LabelSelector: "app.kubernetes.io/name=knight",
-		})
-		if err != nil {
-			http.Error(w, "Failed to list fleet", http.StatusInternalServerError)
-			return
-		}
-
-		knights := []KnightStatus{}
-		for _, pod := range pods.Items {
-			// Skip CronJob pods and pods with no containers
-			if _, ok := pod.Labels["job-name"]; ok {
-				continue
-			}
-			if len(pod.Spec.Containers) == 0 {
-				continue
-			}
-			knights = append(knights, buildKnightStatus(pod))
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(knights)
+// makeTestKnightCR builds a minimal Knight CR for handler tests.
+func makeTestKnightCR(name, namespace, domain string) *unstructured.Unstructured {
+	knight := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "ai.roundtable.io/v1alpha1",
+			"kind":       "Knight",
+			"metadata": map[string]interface{}{
+				"name":      name,
+				"namespace": namespace,
+			},
+			"spec": map[string]interface{}{
+				"domain": domain,
+			},
+			"status": map[string]interface{}{
+				"phase": "Ready",
+			},
+		},
 	}
-}
-
-func testKnightHandler(namespace string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		name := vars["knight"]
-
-		if fakeK8sClient == nil {
-			http.Error(w, "Kubernetes not available", http.StatusServiceUnavailable)
-			return
-		}
-
-		pods, err := fakeK8sClient.CoreV1().Pods(namespace).List(r.Context(), metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("app.kubernetes.io/name=knight,app.kubernetes.io/instance=%s", name),
-		})
-		if err != nil || len(pods.Items) == 0 {
-			http.Error(w, "Knight not found", http.StatusNotFound)
-			return
-		}
-
-		pod := pods.Items[0]
-
-		// Build safe DTO
-		detail := KnightDetail{
-			KnightStatus: buildKnightStatus(pod),
-			Node:         pod.Spec.NodeName,
-			PodName:      pod.Name,
-			Phase:        string(pod.Status.Phase),
-		}
-		if !pod.CreationTimestamp.IsZero() {
-			t := pod.CreationTimestamp.Time
-			detail.StartTime = &t
-		}
-		for _, c := range pod.Status.ContainerStatuses {
-			state := "unknown"
-			if c.State.Running != nil {
-				state = "running"
-			} else if c.State.Waiting != nil {
-				state = "waiting:" + c.State.Waiting.Reason
-			} else if c.State.Terminated != nil {
-				state = "terminated:" + c.State.Terminated.Reason
-			}
-			detail.Containers = append(detail.Containers, ContainerDetail{
-				Name: c.Name, Image: c.Image, Ready: c.Ready, State: state, Started: c.Started,
-			})
-		}
-		for _, cond := range pod.Status.Conditions {
-			detail.Conditions = append(detail.Conditions, PodCondition{
-				Type: string(cond.Type), Status: string(cond.Status),
-			})
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(detail)
-	}
+	knight.SetCreationTimestamp(metav1.Now())
+	return knight
 }
 
 // TestHealthEndpoint tests the /api/health endpoint
@@ -301,12 +237,18 @@ func TestFleetHandler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create test pod: %v", err)
 	}
-	
+
+	// The fleet handler is driven by Knight CRs — pods only enrich them
+	_, err = dynClient.Resource(knightGVR).Namespace(namespace).Create(nil, makeTestKnightCR("galahad", namespace, "security"), metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("failed to create knight CR: %v", err)
+	}
+
 	req := httptest.NewRequest("GET", "/api/fleet", nil)
 	w := httptest.NewRecorder()
-	
+
 	router.ServeHTTP(w, req)
-	
+
 	if w.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", w.Code)
 	}
@@ -413,7 +355,33 @@ func TestKnightHandler(t *testing.T) {
 	}
 	
 	fakeK8sClient.CoreV1().Pods(namespace).Create(nil, pod, metav1.CreateOptions{})
-	
+	if _, err := dynClient.Resource(knightGVR).Namespace(namespace).Create(nil, makeTestKnightCR("tristan", namespace, "infrastructure"), metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create knight CR: %v", err)
+	}
+
+	// Terminating pod from an old ReplicaSet — sorts before the ready pod by
+	// name; the handler must prefer the ready one (#125)
+	oldPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "tristan-abc123",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":     "knight",
+				"app.kubernetes.io/instance": "tristan",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "knight", Image: "knight:v0"}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "knight", Ready: false},
+			},
+		},
+	}
+	fakeK8sClient.CoreV1().Pods(namespace).Create(nil, oldPod, metav1.CreateOptions{})
+
 	tests := []struct {
 		name           string
 		knightName     string
@@ -435,8 +403,18 @@ func TestKnightHandler(t *testing.T) {
 				if detail.Node != "node-1" {
 					t.Errorf("expected node 'node-1', got '%s'", detail.Node)
 				}
-				if detail.Phase != "Running" {
-					t.Errorf("expected phase 'Running', got '%s'", detail.Phase)
+				if detail.PodName != "tristan-xyz789" {
+					t.Errorf("expected ready pod 'tristan-xyz789', got '%s'", detail.PodName)
+				}
+				if detail.PodPhase != "Running" {
+					t.Errorf("expected podPhase 'Running', got '%s'", detail.PodPhase)
+				}
+				// The JSON phase key must carry the CRD phase, not the pod
+				// phase — KnightDetail.PodPhase must not shadow it (#125)
+				var raw map[string]interface{}
+				json.Unmarshal(body, &raw)
+				if raw["phase"] != "Ready" {
+					t.Errorf("expected JSON phase 'Ready' (CRD phase), got '%v'", raw["phase"])
 				}
 			},
 		},
@@ -989,6 +967,28 @@ func TestCapitalizeKnight(t *testing.T) {
 				t.Errorf("capitalizeKnight(%s) = %s, expected %s", tt.input, result, tt.expected)
 			}
 		})
+	}
+}
+
+// TestEventTimestamp tests payload timestamp extraction for event dedup
+func TestEventTimestamp(t *testing.T) {
+	want := time.Date(2026, 6, 1, 12, 30, 0, 0, time.UTC)
+	payload := []byte(`{"task_id":"galahad-ui-1","success":true,"timestamp":"2026-06-01T12:30:00Z"}`)
+	if got := eventTimestamp(payload); !got.Equal(want) {
+		t.Errorf("eventTimestamp = %v, expected %v", got, want)
+	}
+
+	// Missing / invalid timestamps fall back to roughly now
+	for _, data := range [][]byte{
+		[]byte(`{"task_id":"x"}`),
+		[]byte(`{"timestamp":"not-a-time"}`),
+		[]byte(`not json`),
+		nil,
+	} {
+		got := eventTimestamp(data)
+		if time.Since(got) > time.Minute || time.Until(got) > time.Minute {
+			t.Errorf("eventTimestamp(%q) = %v, expected approximately now", data, got)
+		}
 	}
 }
 

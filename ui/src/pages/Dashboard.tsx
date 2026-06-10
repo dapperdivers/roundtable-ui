@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Crown, Activity, DollarSign, Zap, AlertTriangle, Link2, ArrowRight, TrendingUp, Calendar, BarChart3, ChevronDown, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useFleet } from '../hooks/useFleet'
+import { fetchWithTimeout } from '../hooks/useKnightSession'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getKnightConfig, KNIGHT_NAMES } from '../lib/knights'
 import { parseEvent } from '../lib/events'
@@ -52,7 +53,10 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
 
         const results = await Promise.allSettled(
           names.map(name =>
-            fetch(`/api/fleet/${name}/session?type=stats`).then(r => r.json())
+            fetchWithTimeout(`/api/fleet/${name}/session?type=stats`).then(r => {
+              if (!r || !r.ok) throw new Error('introspect unavailable')
+              return r.json()
+            })
           )
         )
 
@@ -92,12 +96,18 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
       if (knight) knightCosts[knight] = (knightCosts[knight] || 0) + cost
     }
 
-    // Merge cumulative session costs (primary) with live WS costs (supplementary)
+    // Session introspection cost is cumulative and already includes any task
+    // that also arrived as a live result event — adding both double-counts.
+    // Session cost is authoritative per knight; live WS costs only fill in
+    // for knights that didn't report session stats.
     const mergedCosts: Record<string, number> = { ...sessionCosts.perKnight }
+    let mergedTotal = sessionCosts.total
     for (const [name, cost] of Object.entries(knightCosts)) {
-      mergedCosts[name] = (mergedCosts[name] || 0) + cost
+      if (!(name in mergedCosts)) {
+        mergedCosts[name] = cost
+        mergedTotal += cost
+      }
     }
-    const mergedTotal = sessionCosts.total + totalCost
 
     const topKnights = Object.entries(mergedCosts)
       .sort((a, b) => b[1] - a[1])
