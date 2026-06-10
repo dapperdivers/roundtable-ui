@@ -15,7 +15,7 @@ import { LoginPage } from './pages/Login'
 import { RoundTablesPage } from './pages/RoundTables'
 import { ToastProvider, useToast } from './components/Toast'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { useWebSocket } from './hooks/useWebSocket'
+import { useWebSocket, WebSocketProvider } from './hooks/useWebSocket'
 import { useTaskNotifications } from './hooks/useTaskNotifications'
 import { isAuthenticated, clearApiKey } from './lib/auth'
 
@@ -99,6 +99,7 @@ export default function App() {
   }
 
   return (
+    <WebSocketProvider>
     <ToastProvider>
     <div className="flex h-screen">
       <NotificationWatcher />
@@ -187,5 +188,6 @@ export default function App() {
       </main>
     </div>
     </ToastProvider>
+    </WebSocketProvider>
   )
 }
