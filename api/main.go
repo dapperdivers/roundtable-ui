@@ -356,6 +356,11 @@ func main() {
 	}
 }
 
+// podIsReady reports whether the pod's first container is ready.
+func podIsReady(pod *corev1.Pod) bool {
+	return len(pod.Status.ContainerStatuses) > 0 && pod.Status.ContainerStatuses[0].Ready
+}
+
 func buildKnightStatus(cr *unstructured.Unstructured, pod *corev1.Pod) KnightStatus {
 	spec := getNestedMap(cr.Object, "spec")
 	status := getNestedMap(cr.Object, "status")
@@ -451,15 +456,7 @@ func fleetHandler(namespace string) http.HandlerFunc {
 						continue
 					}
 					if existing, exists := podByName[instName]; exists {
-						var existingReady bool
-						if len(existing.Status.ContainerStatuses) > 0 {
-							existingReady = existing.Status.ContainerStatuses[0].Ready
-						}
-						var newReady bool
-						if len(pod.Status.ContainerStatuses) > 0 {
-							newReady = pod.Status.ContainerStatuses[0].Ready
-						}
-						if newReady && !existingReady {
+						if podIsReady(&pod) && !podIsReady(&existing) {
 							podByName[instName] = pod
 						}
 					} else {
@@ -487,9 +484,12 @@ func fleetHandler(namespace string) http.HandlerFunc {
 // KnightDetail is a safe DTO — no raw K8s pod data exposed (#46)
 type KnightDetail struct {
 	KnightStatus
-	Node            string           `json:"node"`
-	PodName         string           `json:"podName"`
-	Phase           string           `json:"phase"`
+	Node    string `json:"node"`
+	PodName string `json:"podName"`
+	// PodPhase is the pod lifecycle phase (Running/Pending/...). Deliberately
+	// NOT named Phase: that would shadow the embedded CRD phase (Ready/
+	// Degraded/...) in the JSON output (#125)
+	PodPhase        string           `json:"podPhase,omitempty"`
 	StartTime       *time.Time       `json:"startTime"`
 	Containers      []ContainerDetail `json:"containers"`
 	Conditions      []PodCondition   `json:"conditions"`
@@ -532,14 +532,19 @@ func knightHandler(namespace string) http.HandlerFunc {
 			return
 		}
 
-		// Find matching pod (best-effort; knight may not have a pod yet)
+		// Find matching pod (best-effort; knight may not have a pod yet).
+		// Prefer the ready pod so rollouts show the new pod, matching fleetHandler.
 		var podPtr *corev1.Pod
 		if k8sClient != nil {
 			pods, podErr := k8sClient.CoreV1().Pods(namespace).List(r.Context(), metav1.ListOptions{
 				LabelSelector: fmt.Sprintf("app.kubernetes.io/name=knight,app.kubernetes.io/instance=%s", name),
 			})
-			if podErr == nil && len(pods.Items) > 0 {
-				podPtr = &pods.Items[0]
+			if podErr == nil {
+				for i := range pods.Items {
+					if podPtr == nil || (!podIsReady(podPtr) && podIsReady(&pods.Items[i])) {
+						podPtr = &pods.Items[i]
+					}
+				}
 			}
 		}
 
@@ -551,7 +556,7 @@ func knightHandler(namespace string) http.HandlerFunc {
 			pod := podPtr
 			detail.Node = pod.Spec.NodeName
 			detail.PodName = pod.Name
-			detail.Phase = string(pod.Status.Phase)
+			detail.PodPhase = string(pod.Status.Phase)
 			if !pod.CreationTimestamp.IsZero() {
 				t := pod.CreationTimestamp.Time
 				detail.StartTime = &t
