@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { authFetch } from '../lib/auth'
 
+// Matches pi-knight's introspect stats response (src/introspect.ts buildStats)
 export interface KnightSessionStats {
   knight: string
   supported?: boolean  // whether knight responded to introspect
@@ -9,9 +10,8 @@ export interface KnightSessionStats {
     userMessages: number
     assistantMessages: number
     toolCalls: number
-    toolResults: number
     totalMessages: number
-    tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number }
+    tokens: { input: number; output: number; total: number }
     cost: number
   } | null
   runtime: {
