@@ -36,7 +36,7 @@ var validKnightName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]{0,62}$`)
 var (
 	nc        *nats.Conn
 	js        jetstream.JetStream
-	k8sClient *kubernetes.Clientset
+	k8sClient kubernetes.Interface
 	dynClient dynamic.Interface
 	upgrader  = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -240,15 +240,18 @@ func main() {
 	if err != nil {
 		log.Printf("WARNING: K8s in-cluster config failed (running outside cluster?): %v", err)
 	} else {
-		k8sClient, err = kubernetes.NewForConfig(config)
-		if err != nil {
-			log.Printf("WARNING: K8s client creation failed: %v", err)
+		// Assign globals only on success — a typed-nil client would defeat the
+		// k8sClient != nil availability checks in handlers
+		if cs, csErr := kubernetes.NewForConfig(config); csErr != nil {
+			log.Printf("WARNING: K8s client creation failed: %v", csErr)
 		} else {
+			k8sClient = cs
 			log.Println("Kubernetes client connected")
 		}
-		dynClient, err = dynamic.NewForConfig(config)
-		if err != nil {
-			log.Printf("WARNING: Dynamic K8s client creation failed: %v", err)
+		if dc, dcErr := dynamic.NewForConfig(config); dcErr != nil {
+			log.Printf("WARNING: Dynamic K8s client creation failed: %v", dcErr)
+		} else {
+			dynClient = dc
 		}
 	}
 
@@ -764,6 +767,11 @@ func taskDispatchHandler(fleetPrefix string) http.HandlerFunc {
 		}
 		if len(req.Task) == 0 || len(req.Task) > 10000 {
 			http.Error(w, "Task must be 1-10000 characters", http.StatusBadRequest)
+			return
+		}
+
+		if nc == nil {
+			http.Error(w, "NATS not available", http.StatusServiceUnavailable)
 			return
 		}
 
