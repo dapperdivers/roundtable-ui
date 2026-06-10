@@ -6,6 +6,8 @@ export interface NatsEvent {
   subject: string
   data: unknown
   timestamp: string
+  /** True when the event arrived over the live WebSocket (vs seeded from history) */
+  live?: boolean
 }
 
 const MAX_EVENTS = 200
@@ -18,7 +20,7 @@ function jitter(ms: number): number {
 }
 
 /** Generate a dedup key from an event's subject + timestamp */
-function eventKey(e: NatsEvent): string {
+export function eventKey(e: NatsEvent): string {
   return `${e.subject}:${e.timestamp}`
 }
 
@@ -71,7 +73,7 @@ export function useWebSocket() {
     ws.onmessage = (e) => {
       if (!mountedRef.current) return
       try {
-        const event: NatsEvent = JSON.parse(e.data)
+        const event: NatsEvent = { ...JSON.parse(e.data), live: true }
         const key = eventKey(event)
         if (seenEvents.current.has(key)) return // deduplicate
         seenEvents.current.add(key)

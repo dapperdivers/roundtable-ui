@@ -1,29 +1,36 @@
 import { useEffect, useRef } from 'react'
-import type { NatsEvent } from './useWebSocket'
+import { eventKey, type NatsEvent } from './useWebSocket'
 import { getKnightConfig } from '../lib/knights'
 import { parseEvent, resultFailureReason } from '../lib/events'
 
+const MAX_SEEN_KEYS = 1000
+
+/**
+ * Toast on live result events. Tracks event identity (not array length —
+ * the feed is capped, so its length stops changing once full) and only
+ * notifies for events that arrived over the WebSocket after mount, never
+ * for seeded history.
+ */
 export function useTaskNotifications(
   events: NatsEvent[],
   addToast: (message: string, type: 'success' | 'info' | 'warning' | 'error') => void,
 ) {
-  const seenCount = useRef(0)
+  const seenKeys = useRef(new Set<string>())
 
   useEffect(() => {
-    if (events.length === 0) return
+    const seen = seenKeys.current
+    const fresh = events.filter((e) => !seen.has(eventKey(e)))
+    if (fresh.length === 0) return
 
-    // Events are prepended (newest first), so new events are at indices 0..newCount-1
-    const newCount = events.length - seenCount.current
-    if (newCount <= 0) {
-      seenCount.current = events.length
-      return
+    for (const e of fresh) seen.add(eventKey(e))
+    // Bound the seen set; Sets iterate in insertion order, so keep the newest
+    if (seen.size > MAX_SEEN_KEYS) {
+      const keys = Array.from(seen)
+      seenKeys.current = new Set(keys.slice(keys.length - MAX_SEEN_KEYS / 2))
     }
 
-    const newEvents = events.slice(0, newCount)
-    seenCount.current = events.length
-
-    for (const event of newEvents) {
-      if (event.type !== 'result') continue
+    for (const event of fresh) {
+      if (!event.live || event.type !== 'result') continue
 
       const { knight, data } = parseEvent(event)
       const config = getKnightConfig(knight || 'unknown')
