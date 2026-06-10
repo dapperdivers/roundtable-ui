@@ -189,7 +189,8 @@ func authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// rateLimiter is a simple sliding-window rate limiter (#12)
+// rateLimiterT is a simple fixed-window rate limiter (#12): the token bucket
+// refills in full every interval. Note it is global — shared by all clients.
 type rateLimiterT struct {
 	mu       sync.Mutex
 	tokens   int
@@ -1482,7 +1483,14 @@ func missionCreateHandler(namespace string) http.HandlerFunc {
 			}
 		}
 
-		// Build mission object
+		// Build mission object — copy the request body into spec without the
+		// metadata-level name key (it is not a spec field)
+		spec := make(map[string]interface{}, len(reqBody))
+		for k, v := range reqBody {
+			if k != "name" {
+				spec[k] = v
+			}
+		}
 		mission := map[string]interface{}{
 			"apiVersion": "ai.roundtable.io/v1alpha1",
 			"kind":       "Mission",
@@ -1490,7 +1498,7 @@ func missionCreateHandler(namespace string) http.HandlerFunc {
 				"name":      name,
 				"namespace": namespace,
 			},
-			"spec": reqBody,
+			"spec": spec,
 		}
 
 		// Create via dynamic client

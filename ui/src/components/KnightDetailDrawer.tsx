@@ -93,7 +93,7 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
   const fetchLogs = async (knightName: string) => {
     setLogsLoading(true)
     try {
-      const res = await fetch(`/api/fleet/${knightName}/logs?tail=100`)
+      const res = await authFetch(`/api/fleet/${knightName}/logs`)
       if (res.ok) {
         const text = await res.text()
         setLogs(text)
