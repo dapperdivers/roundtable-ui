@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, createContext, useContext, type ReactNode } from 'react'
 import { getApiKey, authFetch } from '../lib/auth'
 
 export interface NatsEvent {
@@ -24,7 +24,12 @@ export function eventKey(e: NatsEvent): string {
   return `${e.subject}:${e.timestamp}`
 }
 
-export function useWebSocket() {
+/**
+ * Owns a WebSocket connection + event feed. Use via WebSocketProvider /
+ * useWebSocket — mounting this hook directly opens a NEW connection
+ * (4 NATS subscriptions server-side) and refetches history.
+ */
+function useWebSocketConnection() {
   const [events, setEvents] = useState<NatsEvent[]>([])
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -151,4 +156,26 @@ export function useWebSocket() {
   }, [])
 
   return { events, connected, error, dispatch, clearEvents }
+}
+
+type WebSocketState = ReturnType<typeof useWebSocketConnection>
+
+const WebSocketContext = createContext<WebSocketState | null>(null)
+
+/**
+ * Holds the app's single WebSocket connection and event feed (#127).
+ * Mount once near the root; every useWebSocket() consumer shares it.
+ */
+export function WebSocketProvider({ children }: { children: ReactNode }) {
+  const ws = useWebSocketConnection()
+  return <WebSocketContext.Provider value={ws}>{children}</WebSocketContext.Provider>
+}
+
+/** Access the shared WebSocket event feed. Requires WebSocketProvider. */
+export function useWebSocket(): WebSocketState {
+  const ctx = useContext(WebSocketContext)
+  if (!ctx) {
+    throw new Error('useWebSocket must be used within a WebSocketProvider')
+  }
+  return ctx
 }
