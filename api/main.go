@@ -109,6 +109,20 @@ type TaskEvent struct {
 	Timestamp time.Time       `json:"timestamp"`
 }
 
+// eventTimestamp extracts the producer timestamp from an event payload so the
+// same message gets the same timestamp whether it arrives live over the
+// WebSocket or is replayed from JetStream history — the frontend dedup key is
+// subject+timestamp. Falls back to now for payloads without a timestamp.
+func eventTimestamp(data []byte) time.Time {
+	var payload struct {
+		Timestamp time.Time `json:"timestamp"`
+	}
+	if err := json.Unmarshal(data, &payload); err == nil && !payload.Timestamp.IsZero() {
+		return payload.Timestamp
+	}
+	return time.Now()
+}
+
 // validK8sName validates Kubernetes resource names to prevent label selector injection.
 var validK8sName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
@@ -705,14 +719,25 @@ func taskHistoryHandler(fleetPrefix, streamName string) http.HandlerFunc {
 			return
 		}
 
-		info, _ := stream.Info(ctx)
+		info, err := stream.Info(ctx)
+		if err != nil {
+			log.Printf("JetStream stream info error: %v", err)
+			http.Error(w, "Task history unavailable", http.StatusInternalServerError)
+			return
+		}
 		results := []TaskEvent{}
 
-		// Get last N messages
-		limit := 50
-		// Use a named ephemeral consumer with InactiveThreshold for auto-cleanup (#54)
+		// Get the newest N messages: result subjects are unique per task, so
+		// start limit messages back from the stream tail and read forward
+		const limit = 50
+		startSeq := uint64(1)
+		if info.State.LastSeq > limit {
+			startSeq = info.State.LastSeq - limit + 1
+		}
+		// Ephemeral consumer with InactiveThreshold for auto-cleanup (#54)
 		cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-			DeliverPolicy:     jetstream.DeliverLastPerSubjectPolicy,
+			DeliverPolicy:     jetstream.DeliverByStartSequencePolicy,
+			OptStartSeq:       startSeq,
 			FilterSubject:     fleetPrefix + ".results.>",
 			AckPolicy:         jetstream.AckNonePolicy,
 			InactiveThreshold: 30 * time.Second,
@@ -727,14 +752,14 @@ func taskHistoryHandler(fleetPrefix, streamName string) http.HandlerFunc {
 			return
 		}
 
-		msgs, _ := cons.Fetch(limit, jetstream.FetchMaxWait(5*time.Second))
+		msgs, _ := cons.FetchNoWait(limit)
 		if msgs != nil {
 			for msg := range msgs.Messages() {
 				results = append(results, TaskEvent{
 					Type:      "result",
 					Subject:   msg.Subject(),
 					Data:      msg.Data(),
-					Timestamp: time.Now(),
+					Timestamp: eventTimestamp(msg.Data()),
 				})
 			}
 		}
@@ -899,7 +924,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 				Type:      "task",
 				Subject:   msg.Subject,
 				Data:      msg.Data,
-				Timestamp: time.Now(),
+				Timestamp: eventTimestamp(msg.Data),
 			}
 			data, _ := json.Marshal(event)
 			safeWrite(data)
@@ -920,7 +945,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 				Type:      "result",
 				Subject:   msg.Subject,
 				Data:      msg.Data,
-				Timestamp: time.Now(),
+				Timestamp: eventTimestamp(msg.Data),
 			}
 			data, _ := json.Marshal(event)
 			safeWrite(data)
@@ -943,7 +968,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 				Type:      "mission",
 				Subject:   msg.Subject,
 				Data:      msg.Data,
-				Timestamp: time.Now(),
+				Timestamp: eventTimestamp(msg.Data),
 			}
 			data, _ := json.Marshal(event)
 			safeWrite(data)
@@ -965,7 +990,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 				Type:      "chain",
 				Subject:   msg.Subject,
 				Data:      msg.Data,
-				Timestamp: time.Now(),
+				Timestamp: eventTimestamp(msg.Data),
 			}
 			data, _ := json.Marshal(event)
 			safeWrite(data)
