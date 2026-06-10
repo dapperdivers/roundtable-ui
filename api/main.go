@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -692,11 +693,19 @@ func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 			return
 		}
 
+		// Forward a validated entry limit (pi-knight defaults to 20 for type=recent)
+		introspectReq := map[string]interface{}{"type": reqType}
+		if limStr := r.URL.Query().Get("limit"); limStr != "" {
+			if lim, limErr := strconv.Atoi(limStr); limErr == nil && lim > 0 && lim <= 500 {
+				introspectReq["limit"] = lim
+			}
+		}
+		payload, _ := json.Marshal(introspectReq)
+
 		// Knight names in NATS are capitalized (e.g., "Galahad")
 		capitalName := capitalizeKnight(name)
 		subject := fmt.Sprintf("%s.introspect.%s", fleetPrefix, capitalName)
-		payload := fmt.Sprintf(`{"type":"%s"}`, reqType)
-		msg, err := nc.Request(subject, []byte(payload), 5*time.Second)
+		msg, err := nc.Request(subject, payload, 5*time.Second)
 		if err != nil {
 			log.Printf("Knight introspect timeout for %s: %v", name, err)
 			http.Error(w, "Knight introspection timeout", http.StatusGatewayTimeout)
