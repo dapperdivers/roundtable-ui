@@ -14,6 +14,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { buildKnightConfigFromFleet, getKnightConfig, knightNameForDomain } from '../lib/knights'
+import { parseEvent } from '../lib/events'
 import type { NatsEvent } from '../hooks/useWebSocket'
 import type { Knight } from '../hooks/useFleet'
 
@@ -189,17 +190,12 @@ function buildEdges(
 
   // Count recent messages per edge pair
   for (const event of recentEvents.slice(0, 50)) {
-    const parts = event.subject.split('.')
-    const domain = parts[2] || ''
-    const isTask = parts[1] === 'tasks'
-    const knight = knightNameForDomain(domain)
+    const parsed = parseEvent(event)
+    const isTask = event.type === 'task'
+    const knight = parsed.knight
     if (!knight) continue
 
-    const data = (typeof event.data === 'string'
-      ? (() => { try { return JSON.parse(event.data as string) } catch { return {} } })()
-      : event.data || {}) as Record<string, unknown>
-
-    const from = (data.from as string) || ''
+    const from = (parsed.data.from as string) || ''
     const sourceKnight = knightNameForDomain(from)
 
     let edgeKey: string
@@ -289,23 +285,16 @@ export function FleetGraph({ knights, events, connected, knightStatuses = {}, on
 
     // Process events to compute activity
     for (const event of events) {
-      const parts = event.subject.split('.')
-      const domain = parts[2] || ''
-      const knight = knightNameForDomain(domain)
+      const parsed = parseEvent(event)
+      const knight = parsed.knight
       if (!knight || !act[knight]) continue
 
       if (event.type === 'task') {
         act[knight].recentTasks++
-        const data = (typeof event.data === 'string'
-          ? (() => { try { return JSON.parse(event.data as string) } catch { return {} } })()
-          : event.data || {}) as Record<string, unknown>
-        const taskId = (data.task_id as string) || ''
+        const taskId = (parsed.data.task_id as string) || parsed.taskId
         if (taskId) act[knight].pendingTasks.add(taskId)
       } else {
-        const data = (typeof event.data === 'string'
-          ? (() => { try { return JSON.parse(event.data as string) } catch { return {} } })()
-          : event.data || {}) as Record<string, unknown>
-        const taskId = (data.task_id as string) || ''
+        const taskId = (parsed.data.task_id as string) || parsed.taskId
         if (taskId) act[knight].pendingTasks.delete(taskId)
       }
     }

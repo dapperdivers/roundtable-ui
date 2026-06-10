@@ -4,7 +4,8 @@ import { Crown, Activity, DollarSign, Zap, AlertTriangle, Link2, ArrowRight, Tre
 import { Link } from 'react-router-dom'
 import { useFleet } from '../hooks/useFleet'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { getKnightConfig, knightNameForDomain, KNIGHT_NAMES } from '../lib/knights'
+import { getKnightConfig, KNIGHT_NAMES } from '../lib/knights'
+import { parseEvent } from '../lib/events'
 
 interface ChainSummary {
   name: string
@@ -82,17 +83,13 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
       if (e.type !== 'result') continue
       totalResults++
 
-      const data = (typeof e.data === 'string'
-        ? (() => { try { return JSON.parse(e.data as string) } catch { return {} } })()
-        : e.data || {}) as Record<string, unknown>
+      const { knight, data } = parseEvent(e)
 
       if (data.success === false) failures++
       const cost = typeof data.cost === 'number' ? data.cost : 0
       totalCost += cost
 
-      const parts = e.subject.split('.')
-      const name = knightNameForDomain(parts[2] || '')
-      if (name) knightCosts[name] = (knightCosts[name] || 0) + cost
+      if (knight) knightCosts[knight] = (knightCosts[knight] || 0) + cost
     }
 
     // Merge cumulative session costs (primary) with live WS costs (supplementary)
@@ -114,18 +111,14 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
     const entries: CostEntry[] = []
     for (const event of events) {
       if (event.type !== 'result') continue
-      const data = (typeof event.data === 'string'
-        ? (() => { try { return JSON.parse(event.data as string) } catch { return {} } })()
-        : event.data || {}) as Record<string, unknown>
+      const { knight, taskId, data } = parseEvent(event)
       const cost = typeof data.cost === 'number' ? data.cost : 0
       if (cost <= 0) continue
-      const parts = event.subject.split('.')
-      const domain = parts[2] || ''
       entries.push({
-        knight: knightNameForDomain(domain) || domain,
+        knight: knight || 'unknown',
         cost,
         timestamp: event.timestamp,
-        taskId: parts[3] || '',
+        taskId,
         success: data.success !== false,
       })
     }
@@ -291,14 +284,13 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
           </div>
           <div className="space-y-1.5 max-h-64 overflow-y-auto">
             {events.slice(0, 10).map((e, i) => {
-              const parts = e.subject.split('.')
-              const name = knightNameForDomain(parts[2] || '')
-              const cfg = name ? getKnightConfig(name) : null
+              const { knight, domain } = parseEvent(e)
+              const cfg = knight ? getKnightConfig(knight) : null
               return (
                 <div key={i} className="flex items-center gap-2 text-xs py-1">
                   <span>{e.type === 'task' ? '📤' : '📥'}</span>
                   <span>{cfg?.emoji || '🤖'}</span>
-                  <span className="text-gray-400 truncate flex-1">{name || parts[2]}</span>
+                  <span className="text-gray-400 truncate flex-1">{knight || domain || e.type}</span>
                   <span className="text-gray-600">{new Date(e.timestamp).toLocaleTimeString()}</span>
                 </div>
               )
