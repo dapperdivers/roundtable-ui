@@ -45,8 +45,12 @@ export interface SessionTreeNode {
   summary: string
 }
 
+// Client-side timeout must exceed the API's 5s NATS introspect timeout —
+// otherwise the client aborts first and a slow knight looks "unsupported"
+export const SESSION_TIMEOUT_MS = 8000
+
 // Helper to add timeout to fetch requests
-async function fetchWithTimeout(url: string, timeoutMs = 5000): Promise<Response | null> {
+export async function fetchWithTimeout(url: string, timeoutMs = SESSION_TIMEOUT_MS): Promise<Response | null> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   
@@ -70,7 +74,7 @@ export function useKnightSession() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchStats = useCallback(async (knight: string, timeoutMs = 5000) => {
+  const fetchStats = useCallback(async (knight: string, timeoutMs = SESSION_TIMEOUT_MS) => {
     setLoading(true)
     setError(null)
     try {
@@ -95,7 +99,7 @@ export function useKnightSession() {
     }
   }, [])
 
-  const fetchRecent = useCallback(async (knight: string, limit = 20, timeoutMs = 5000) => {
+  const fetchRecent = useCallback(async (knight: string, limit = 20, timeoutMs = SESSION_TIMEOUT_MS) => {
     try {
       const res = await fetchWithTimeout(`/api/fleet/${knight}/session?type=recent&limit=${limit}`, timeoutMs)
       if (!res || !res.ok) {
@@ -110,7 +114,7 @@ export function useKnightSession() {
     }
   }, [])
 
-  const fetchTree = useCallback(async (knight: string, timeoutMs = 5000) => {
+  const fetchTree = useCallback(async (knight: string, timeoutMs = SESSION_TIMEOUT_MS) => {
     try {
       const res = await fetchWithTimeout(`/api/fleet/${knight}/session?type=tree`, timeoutMs)
       if (!res || !res.ok) {

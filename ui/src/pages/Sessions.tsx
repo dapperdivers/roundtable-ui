@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { TreePine, ChevronRight, ChevronDown, Wrench, MessageSquare, Brain, RefreshCw, Search, BarChart3, Loader2 } from 'lucide-react'
 import { getKnightConfig, buildKnightConfigFromFleet } from '../lib/knights'
 import { useFleet } from '../hooks/useFleet'
+import { fetchWithTimeout } from '../hooks/useKnightSession'
 import type { SessionEntry, SessionTreeNode, KnightSessionStats } from '../hooks/useKnightSession'
 
 const entryTypeIcons: Record<string, string> = {
@@ -146,15 +147,10 @@ export function SessionsPage() {
     setError(null)
     
     try {
-      // Fetch with timeout - gracefully handle unsupported knights
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 5000)
-
-      // Always fetch stats
-      fetch(`/api/fleet/${selectedKnight}/session?type=stats`, { signal: controller.signal })
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { 
-          clearTimeout(timeout)
+      // Always fetch stats (independent request with its own timeout)
+      fetchWithTimeout(`/api/fleet/${selectedKnight}/session?type=stats`)
+        .then(r => r && r.ok ? r.json() : null)
+        .then(d => {
           if (d) {
             setStats({ ...d, supported: true })
           } else {
@@ -162,21 +158,20 @@ export function SessionsPage() {
           }
         })
         .catch(() => {
-          clearTimeout(timeout)
           setStats({ knight: selectedKnight, supported: false, session: null, runtime: { uptime: 0, activeTasks: 0, model: '' } })
         })
 
       if (view === 'tree') {
-        const res = await fetch(`/api/fleet/${selectedKnight}/session?type=tree`, { signal: controller.signal })
-        if (!res.ok) {
+        const res = await fetchWithTimeout(`/api/fleet/${selectedKnight}/session?type=tree`)
+        if (!res || !res.ok) {
           setTreeNodes([])
           return
         }
         const data = await res.json()
         setTreeNodes(data.nodes || [])
       } else {
-        const res = await fetch(`/api/fleet/${selectedKnight}/session?type=recent&limit=100`, { signal: controller.signal })
-        if (!res.ok) {
+        const res = await fetchWithTimeout(`/api/fleet/${selectedKnight}/session?type=recent&limit=100`)
+        if (!res || !res.ok) {
           setEntries([])
           return
         }
@@ -184,14 +179,7 @@ export function SessionsPage() {
         setEntries(data.entries || [])
       }
     } catch (e) {
-      if ((e as Error).name === 'AbortError') {
-        // Timeout - knight doesn't support introspect
-        setError(null)
-        setEntries([])
-        setTreeNodes([])
-      } else {
-        setError(e instanceof Error ? e.message : 'Failed to fetch session data')
-      }
+      setError(e instanceof Error ? e.message : 'Failed to fetch session data')
     } finally {
       setLoading(false)
     }
@@ -205,11 +193,8 @@ export function SessionsPage() {
     const results: Record<string, KnightSessionStats> = {}
     await Promise.all(knights.map(async k => {
       try {
-        const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 5000)
-        const res = await fetch(`/api/fleet/${k.name}/session?type=stats`, { signal: controller.signal })
-        clearTimeout(timeout)
-        if (res.ok) {
+        const res = await fetchWithTimeout(`/api/fleet/${k.name}/session?type=stats`)
+        if (res && res.ok) {
           const data = await res.json()
           results[k.name] = { ...data, supported: true }
         }
