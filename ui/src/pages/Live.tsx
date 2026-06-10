@@ -4,18 +4,9 @@ import { useWebSocket, type NatsEvent } from '../hooks/useWebSocket'
 import { useFleet } from '../hooks/useFleet'
 import type { Knight } from '../hooks/useFleet'
 import { getKnightConfig, KNIGHT_CONFIG, knightNameForDomain } from '../lib/knights'
+import { parseEvent, parseEventData } from '../lib/events'
 import { FleetGraph } from '../components/FleetGraph'
 import { KnightDetailDrawer } from '../components/KnightDetailDrawer'
-
-function parseSubject(subject: string) {
-  const parts = subject.split('.')
-  return { fleet: parts[0] || '', type: parts[1] || '', domain: parts[2] || '', taskId: parts[3] || '' }
-}
-
-function parseEventData(data: unknown): Record<string, unknown> {
-  if (typeof data === 'string') { try { return JSON.parse(data) } catch { return { raw: data } } }
-  return (data as Record<string, unknown>) || {}
-}
 
 export function LivePage() {
   const { events, connected } = useWebSocket()
@@ -59,13 +50,14 @@ export function LivePage() {
 
   const filteredEvents = useMemo(() => {
     return events.filter((event) => {
-      const parsed = parseSubject(event.subject)
       if (filterType && event.type !== filterType) return false
-      if (filterDomain && parsed.domain !== filterDomain) return false
-      if (filterKnight) {
-        const knight = knightNameForDomain(parsed.domain)
-        if (knight !== filterKnight) return false
+      const parsed = parseEvent(event)
+      if (filterDomain) {
+        // Results carry no domain — fall back to the knight's configured domain
+        const domain = parsed.domain || (parsed.knight ? getKnightConfig(parsed.knight).domain : '')
+        if (domain !== filterDomain) return false
       }
+      if (filterKnight && parsed.knight !== filterKnight) return false
       return true
     })
   }, [events, filterKnight, filterType, filterDomain])
@@ -126,12 +118,9 @@ export function LivePage() {
       {(() => {
         const comms: Record<string, number> = {}
         for (const event of filteredEvents.slice(0, 100)) {
-          const data = (typeof event.data === 'string'
-            ? (() => { try { return JSON.parse(event.data as string) } catch { return {} } })()
-            : event.data || {}) as Record<string, unknown>
-          const from = knightNameForDomain((data.from as string) || '')
-          const parts = event.subject.split('.')
-          const to = knightNameForDomain(parts[2] || '')
+          const parsed = parseEvent(event)
+          const from = knightNameForDomain((parsed.data.from as string) || '')
+          const to = parsed.knight
           if (from && to && from !== to) {
             const key = `${from} → ${to}`
             comms[key] = (comms[key] || 0) + 1
@@ -219,16 +208,15 @@ export function LivePage() {
 function EventCard({ event, index, expanded, onToggle }: {
   event: NatsEvent; index: number; expanded: boolean; onToggle: () => void
 }) {
-  const parsed = parseSubject(event.subject)
-  const knight = knightNameForDomain(parsed.domain)
+  const { knight, data } = parseEvent(event)
   const cfg = knight ? getKnightConfig(knight) : null
-  const data = parseEventData(event.data)
   const isTask = event.type === 'task'
-  const taskText = (data.task as string) || (data.summary as string) || ''
+  const taskText = (data.task as string) || (data.result as string) || (data.summary as string) || ''
   const success = data.success as boolean | undefined
   const cost = typeof data.cost === 'number' ? data.cost : undefined
-  const duration = typeof data.duration === 'number' ? data.duration : undefined
-  const toolCalls = typeof data.toolCalls === 'number' ? data.toolCalls : undefined
+  // pi-knight publishes duration_ms and tool_calls
+  const durationMs = typeof data.duration_ms === 'number' ? data.duration_ms : undefined
+  const toolCalls = typeof data.tool_calls === 'number' ? data.tool_calls : undefined
 
   return (
     <div
@@ -253,8 +241,8 @@ function EventCard({ event, index, expanded, onToggle }: {
         {!isTask && cost !== undefined && (
           <span className="text-gray-500">${cost.toFixed(4)}</span>
         )}
-        {!isTask && duration !== undefined && (
-          <span className="text-gray-500">{duration}s</span>
+        {!isTask && durationMs !== undefined && (
+          <span className="text-gray-500">{(durationMs / 1000).toFixed(1)}s</span>
         )}
         {!isTask && toolCalls !== undefined && (
           <span className="text-gray-500">🔧{toolCalls}</span>

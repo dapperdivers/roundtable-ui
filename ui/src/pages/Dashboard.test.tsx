@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BrowserRouter } from 'react-router-dom'
 import { DashboardPage } from './Dashboard'
+import { useFleet } from '../hooks/useFleet'
 
 // Mock the hooks
 vi.mock('../hooks/useFleet', () => ({
@@ -88,7 +89,7 @@ describe('DashboardPage', () => {
 
   it('renders the dashboard title', () => {
     renderDashboard()
-    expect(screen.getByText('Round Table Dashboard')).toBeInTheDocument()
+    expect(screen.getByText('Command Center')).toBeInTheDocument()
   })
 
   it('displays fleet status section', async () => {
@@ -101,7 +102,7 @@ describe('DashboardPage', () => {
   it('shows online knight count', async () => {
     renderDashboard()
     await waitFor(() => {
-      expect(screen.getByText('2')).toBeInTheDocument() // 2 knights online
+      expect(screen.getByText('2/2')).toBeInTheDocument() // 2 of 2 knights online
     })
   })
 
@@ -125,7 +126,7 @@ describe('DashboardPage', () => {
   it('cost panel is expanded when defaultCostExpanded is true', async () => {
     renderDashboard({ defaultCostExpanded: true })
     await waitFor(() => {
-      expect(screen.getByText(/Session Costs/i)).toBeInTheDocument()
+      expect(screen.getByText(/Daily Cost Trend/i)).toBeInTheDocument()
     })
   })
 
@@ -134,71 +135,69 @@ describe('DashboardPage', () => {
     renderDashboard()
 
     // Find and click the cost panel toggle button
-    const costButton = screen.getByRole('button', { name: /Session Costs/i })
-    
+    const costButton = screen.getByRole('button', { name: /Cost Details/i })
+
     // Initially collapsed
-    expect(screen.queryByText(/Per-Knight Breakdown/i)).not.toBeInTheDocument()
-    
+    expect(screen.queryByText(/Daily Cost Trend/i)).not.toBeInTheDocument()
+
     // Click to expand
     await user.click(costButton)
-    
+
     await waitFor(() => {
-      expect(screen.getByText(/Per-Knight Breakdown/i)).toBeInTheDocument()
+      expect(screen.getByText(/Daily Cost Trend/i)).toBeInTheDocument()
     })
-    
+
     // Click to collapse
     await user.click(costButton)
-    
+
     await waitFor(() => {
-      expect(screen.queryByText(/Per-Knight Breakdown/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/Daily Cost Trend/i)).not.toBeInTheDocument()
     })
   })
 
   it('displays activity feed section', async () => {
     renderDashboard()
     await waitFor(() => {
-      expect(screen.getByText(/Activity Feed/i)).toBeInTheDocument()
+      expect(screen.getByText(/Recent Activity/i)).toBeInTheDocument()
     })
   })
 
   it('shows recent chains section', async () => {
     renderDashboard()
     await waitFor(() => {
-      expect(screen.getByText(/Recent Chains/i)).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: /Chains/i })).toBeInTheDocument()
     })
   })
 
   it('displays WebSocket connection status', async () => {
     renderDashboard()
     await waitFor(() => {
-      // Connected status indicator
-      const liveIndicator = screen.queryByText(/live/i)
-      expect(liveIndicator).toBeInTheDocument()
+      // Connected status indicator in the header
+      expect(screen.queryAllByText(/live/i).length).toBeGreaterThan(0)
     })
   })
 
   it('renders fleet link', () => {
     renderDashboard()
-    const fleetLink = screen.getByRole('link', { name: /View Full Fleet/i })
-    expect(fleetLink).toHaveAttribute('href', '/fleet')
+    const links = screen.getAllByRole('link', { name: /View all/i })
+    expect(links.some(l => l.getAttribute('href') === '/fleet')).toBe(true)
   })
 
   it('renders chains link', () => {
     renderDashboard()
-    const chainsLink = screen.getByRole('link', { name: /View All Chains/i })
-    expect(chainsLink).toHaveAttribute('href', '/chains')
+    const links = screen.getAllByRole('link', { name: /View all/i })
+    expect(links.some(l => l.getAttribute('href') === '/chains')).toBe(true)
   })
 
   it('handles empty fleet gracefully', () => {
-    const { useFleet } = require('../hooks/useFleet')
-    useFleet.mockReturnValueOnce({
+    vi.mocked(useFleet).mockReturnValueOnce({
       knights: [],
       loading: false,
       error: null,
-    })
+    } as unknown as ReturnType<typeof useFleet>)
 
     renderDashboard()
-    expect(screen.getByText('Round Table Dashboard')).toBeInTheDocument()
+    expect(screen.getByText('Command Center')).toBeInTheDocument()
   })
 
   it('displays time range selector', async () => {
