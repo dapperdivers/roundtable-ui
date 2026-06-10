@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -109,6 +110,20 @@ type TaskEvent struct {
 	Timestamp time.Time       `json:"timestamp"`
 }
 
+// eventTimestamp extracts the producer timestamp from an event payload so the
+// same message gets the same timestamp whether it arrives live over the
+// WebSocket or is replayed from JetStream history — the frontend dedup key is
+// subject+timestamp. Falls back to now for payloads without a timestamp.
+func eventTimestamp(data []byte) time.Time {
+	var payload struct {
+		Timestamp time.Time `json:"timestamp"`
+	}
+	if err := json.Unmarshal(data, &payload); err == nil && !payload.Timestamp.IsZero() {
+		return payload.Timestamp
+	}
+	return time.Now()
+}
+
 // validK8sName validates Kubernetes resource names to prevent label selector injection.
 var validK8sName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
@@ -174,7 +189,8 @@ func authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// rateLimiter is a simple sliding-window rate limiter (#12)
+// rateLimiterT is a simple fixed-window rate limiter (#12): the token bucket
+// refills in full every interval. Note it is global — shared by all clients.
 type rateLimiterT struct {
 	mu       sync.Mutex
 	tokens   int
@@ -356,6 +372,11 @@ func main() {
 	}
 }
 
+// podIsReady reports whether the pod's first container is ready.
+func podIsReady(pod *corev1.Pod) bool {
+	return len(pod.Status.ContainerStatuses) > 0 && pod.Status.ContainerStatuses[0].Ready
+}
+
 func buildKnightStatus(cr *unstructured.Unstructured, pod *corev1.Pod) KnightStatus {
 	spec := getNestedMap(cr.Object, "spec")
 	status := getNestedMap(cr.Object, "status")
@@ -451,15 +472,7 @@ func fleetHandler(namespace string) http.HandlerFunc {
 						continue
 					}
 					if existing, exists := podByName[instName]; exists {
-						var existingReady bool
-						if len(existing.Status.ContainerStatuses) > 0 {
-							existingReady = existing.Status.ContainerStatuses[0].Ready
-						}
-						var newReady bool
-						if len(pod.Status.ContainerStatuses) > 0 {
-							newReady = pod.Status.ContainerStatuses[0].Ready
-						}
-						if newReady && !existingReady {
+						if podIsReady(&pod) && !podIsReady(&existing) {
 							podByName[instName] = pod
 						}
 					} else {
@@ -487,9 +500,12 @@ func fleetHandler(namespace string) http.HandlerFunc {
 // KnightDetail is a safe DTO — no raw K8s pod data exposed (#46)
 type KnightDetail struct {
 	KnightStatus
-	Node            string           `json:"node"`
-	PodName         string           `json:"podName"`
-	Phase           string           `json:"phase"`
+	Node    string `json:"node"`
+	PodName string `json:"podName"`
+	// PodPhase is the pod lifecycle phase (Running/Pending/...). Deliberately
+	// NOT named Phase: that would shadow the embedded CRD phase (Ready/
+	// Degraded/...) in the JSON output (#125)
+	PodPhase        string           `json:"podPhase,omitempty"`
 	StartTime       *time.Time       `json:"startTime"`
 	Containers      []ContainerDetail `json:"containers"`
 	Conditions      []PodCondition   `json:"conditions"`
@@ -532,14 +548,19 @@ func knightHandler(namespace string) http.HandlerFunc {
 			return
 		}
 
-		// Find matching pod (best-effort; knight may not have a pod yet)
+		// Find matching pod (best-effort; knight may not have a pod yet).
+		// Prefer the ready pod so rollouts show the new pod, matching fleetHandler.
 		var podPtr *corev1.Pod
 		if k8sClient != nil {
 			pods, podErr := k8sClient.CoreV1().Pods(namespace).List(r.Context(), metav1.ListOptions{
 				LabelSelector: fmt.Sprintf("app.kubernetes.io/name=knight,app.kubernetes.io/instance=%s", name),
 			})
-			if podErr == nil && len(pods.Items) > 0 {
-				podPtr = &pods.Items[0]
+			if podErr == nil {
+				for i := range pods.Items {
+					if podPtr == nil || (!podIsReady(podPtr) && podIsReady(&pods.Items[i])) {
+						podPtr = &pods.Items[i]
+					}
+				}
 			}
 		}
 
@@ -551,7 +572,7 @@ func knightHandler(namespace string) http.HandlerFunc {
 			pod := podPtr
 			detail.Node = pod.Spec.NodeName
 			detail.PodName = pod.Name
-			detail.Phase = string(pod.Status.Phase)
+			detail.PodPhase = string(pod.Status.Phase)
 			if !pod.CreationTimestamp.IsZero() {
 				t := pod.CreationTimestamp.Time
 				detail.StartTime = &t
@@ -678,11 +699,19 @@ func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 			return
 		}
 
+		// Forward a validated entry limit (pi-knight defaults to 20 for type=recent)
+		introspectReq := map[string]interface{}{"type": reqType}
+		if limStr := r.URL.Query().Get("limit"); limStr != "" {
+			if lim, limErr := strconv.Atoi(limStr); limErr == nil && lim > 0 && lim <= 500 {
+				introspectReq["limit"] = lim
+			}
+		}
+		payload, _ := json.Marshal(introspectReq)
+
 		// Knight names in NATS are capitalized (e.g., "Galahad")
 		capitalName := capitalizeKnight(name)
 		subject := fmt.Sprintf("%s.introspect.%s", fleetPrefix, capitalName)
-		payload := fmt.Sprintf(`{"type":"%s"}`, reqType)
-		msg, err := nc.Request(subject, []byte(payload), 5*time.Second)
+		msg, err := nc.Request(subject, payload, 5*time.Second)
 		if err != nil {
 			log.Printf("Knight introspect timeout for %s: %v", name, err)
 			http.Error(w, "Knight introspection timeout", http.StatusGatewayTimeout)
@@ -705,14 +734,25 @@ func taskHistoryHandler(fleetPrefix, streamName string) http.HandlerFunc {
 			return
 		}
 
-		info, _ := stream.Info(ctx)
+		info, err := stream.Info(ctx)
+		if err != nil {
+			log.Printf("JetStream stream info error: %v", err)
+			http.Error(w, "Task history unavailable", http.StatusInternalServerError)
+			return
+		}
 		results := []TaskEvent{}
 
-		// Get last N messages
-		limit := 50
-		// Use a named ephemeral consumer with InactiveThreshold for auto-cleanup (#54)
+		// Get the newest N messages: result subjects are unique per task, so
+		// start limit messages back from the stream tail and read forward
+		const limit = 50
+		startSeq := uint64(1)
+		if info.State.LastSeq > limit {
+			startSeq = info.State.LastSeq - limit + 1
+		}
+		// Ephemeral consumer with InactiveThreshold for auto-cleanup (#54)
 		cons, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-			DeliverPolicy:     jetstream.DeliverLastPerSubjectPolicy,
+			DeliverPolicy:     jetstream.DeliverByStartSequencePolicy,
+			OptStartSeq:       startSeq,
 			FilterSubject:     fleetPrefix + ".results.>",
 			AckPolicy:         jetstream.AckNonePolicy,
 			InactiveThreshold: 30 * time.Second,
@@ -727,14 +767,14 @@ func taskHistoryHandler(fleetPrefix, streamName string) http.HandlerFunc {
 			return
 		}
 
-		msgs, _ := cons.Fetch(limit, jetstream.FetchMaxWait(5*time.Second))
+		msgs, _ := cons.FetchNoWait(limit)
 		if msgs != nil {
 			for msg := range msgs.Messages() {
 				results = append(results, TaskEvent{
 					Type:      "result",
 					Subject:   msg.Subject(),
 					Data:      msg.Data(),
-					Timestamp: time.Now(),
+					Timestamp: eventTimestamp(msg.Data()),
 				})
 			}
 		}
@@ -899,7 +939,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 				Type:      "task",
 				Subject:   msg.Subject,
 				Data:      msg.Data,
-				Timestamp: time.Now(),
+				Timestamp: eventTimestamp(msg.Data),
 			}
 			data, _ := json.Marshal(event)
 			safeWrite(data)
@@ -920,7 +960,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 				Type:      "result",
 				Subject:   msg.Subject,
 				Data:      msg.Data,
-				Timestamp: time.Now(),
+				Timestamp: eventTimestamp(msg.Data),
 			}
 			data, _ := json.Marshal(event)
 			safeWrite(data)
@@ -943,7 +983,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 				Type:      "mission",
 				Subject:   msg.Subject,
 				Data:      msg.Data,
-				Timestamp: time.Now(),
+				Timestamp: eventTimestamp(msg.Data),
 			}
 			data, _ := json.Marshal(event)
 			safeWrite(data)
@@ -965,7 +1005,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 				Type:      "chain",
 				Subject:   msg.Subject,
 				Data:      msg.Data,
-				Timestamp: time.Now(),
+				Timestamp: eventTimestamp(msg.Data),
 			}
 			data, _ := json.Marshal(event)
 			safeWrite(data)
@@ -1443,7 +1483,14 @@ func missionCreateHandler(namespace string) http.HandlerFunc {
 			}
 		}
 
-		// Build mission object
+		// Build mission object — copy the request body into spec without the
+		// metadata-level name key (it is not a spec field)
+		spec := make(map[string]interface{}, len(reqBody))
+		for k, v := range reqBody {
+			if k != "name" {
+				spec[k] = v
+			}
+		}
 		mission := map[string]interface{}{
 			"apiVersion": "ai.roundtable.io/v1alpha1",
 			"kind":       "Mission",
@@ -1451,7 +1498,7 @@ func missionCreateHandler(namespace string) http.HandlerFunc {
 				"name":      name,
 				"namespace": namespace,
 			},
-			"spec": reqBody,
+			"spec": spec,
 		}
 
 		// Create via dynamic client

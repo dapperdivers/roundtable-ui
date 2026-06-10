@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Crown, Activity, DollarSign, Zap, AlertTriangle, Link2, ArrowRight, TrendingUp, Calendar, BarChart3, ChevronDown, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useFleet } from '../hooks/useFleet'
+import { fetchWithTimeout } from '../hooks/useKnightSession'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getKnightConfig, KNIGHT_NAMES } from '../lib/knights'
 import { parseEvent } from '../lib/events'
@@ -52,7 +53,10 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
 
         const results = await Promise.allSettled(
           names.map(name =>
-            fetch(`/api/fleet/${name}/session?type=stats`).then(r => r.json())
+            fetchWithTimeout(`/api/fleet/${name}/session?type=stats`).then(r => {
+              if (!r || !r.ok) throw new Error('introspect unavailable')
+              return r.json()
+            })
           )
         )
 
