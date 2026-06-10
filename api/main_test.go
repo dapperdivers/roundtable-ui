@@ -359,6 +359,29 @@ func TestKnightHandler(t *testing.T) {
 		t.Fatalf("failed to create knight CR: %v", err)
 	}
 
+	// Terminating pod from an old ReplicaSet — sorts before the ready pod by
+	// name; the handler must prefer the ready one (#125)
+	oldPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "tristan-abc123",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":     "knight",
+				"app.kubernetes.io/instance": "tristan",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "knight", Image: "knight:v0"}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "knight", Ready: false},
+			},
+		},
+	}
+	fakeK8sClient.CoreV1().Pods(namespace).Create(nil, oldPod, metav1.CreateOptions{})
+
 	tests := []struct {
 		name           string
 		knightName     string
@@ -380,8 +403,18 @@ func TestKnightHandler(t *testing.T) {
 				if detail.Node != "node-1" {
 					t.Errorf("expected node 'node-1', got '%s'", detail.Node)
 				}
-				if detail.Phase != "Running" {
-					t.Errorf("expected phase 'Running', got '%s'", detail.Phase)
+				if detail.PodName != "tristan-xyz789" {
+					t.Errorf("expected ready pod 'tristan-xyz789', got '%s'", detail.PodName)
+				}
+				if detail.PodPhase != "Running" {
+					t.Errorf("expected podPhase 'Running', got '%s'", detail.PodPhase)
+				}
+				// The JSON phase key must carry the CRD phase, not the pod
+				// phase — KnightDetail.PodPhase must not shadow it (#125)
+				var raw map[string]interface{}
+				json.Unmarshal(body, &raw)
+				if raw["phase"] != "Ready" {
+					t.Errorf("expected JSON phase 'Ready' (CRD phase), got '%v'", raw["phase"])
 				}
 			},
 		},
