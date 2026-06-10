@@ -92,12 +92,18 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
       if (knight) knightCosts[knight] = (knightCosts[knight] || 0) + cost
     }
 
-    // Merge cumulative session costs (primary) with live WS costs (supplementary)
+    // Session introspection cost is cumulative and already includes any task
+    // that also arrived as a live result event — adding both double-counts.
+    // Session cost is authoritative per knight; live WS costs only fill in
+    // for knights that didn't report session stats.
     const mergedCosts: Record<string, number> = { ...sessionCosts.perKnight }
+    let mergedTotal = sessionCosts.total
     for (const [name, cost] of Object.entries(knightCosts)) {
-      mergedCosts[name] = (mergedCosts[name] || 0) + cost
+      if (!(name in mergedCosts)) {
+        mergedCosts[name] = cost
+        mergedTotal += cost
+      }
     }
-    const mergedTotal = sessionCosts.total + totalCost
 
     const topKnights = Object.entries(mergedCosts)
       .sort((a, b) => b[1] - a[1])
