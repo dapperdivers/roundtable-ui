@@ -691,6 +691,52 @@ func knightLogsHandler(namespace string) http.HandlerFunc {
 	}
 }
 
+// deriveIntrospectPrefix queries the Knight CRD to extract the NATS prefix for introspection.
+// This allows the dashboard to support multiple tables (fleet-a, chelonian, etc.) without hardcoding.
+func deriveIntrospectPrefix(ctx context.Context, knightName string) (string, error) {
+	if dynClient == nil {
+		return "", fmt.Errorf("kubernetes client not available")
+	}
+
+	// Query the Knight CRD
+	gvr := schema.GroupVersionResource{
+		Group:    "ai.roundtable.io",
+		Version:  "v1alpha1",
+		Resource: "knights",
+	}
+	namespace := envOr("NAMESPACE", "roundtable")
+	obj, err := dynClient.Resource(gvr).Namespace(namespace).Get(ctx, knightName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get knight %s: %w", knightName, err)
+	}
+
+	// Extract .spec.nats.subjects[]
+	subjects, found, err := unstructured.NestedStringSlice(obj.Object, "spec", "nats", "subjects")
+	if err != nil || !found || len(subjects) == 0 {
+		return "", fmt.Errorf("knight %s has no nats.subjects configured", knightName)
+	}
+
+	// Derive prefix using same logic as operator (internal/knight/pod_builder.go DeriveResultsPrefix)
+	for _, subj := range subjects {
+		if strings.Contains(subj, ".tasks.") {
+			parts := strings.SplitN(subj, ".tasks.", 2)
+			if len(parts) == 2 {
+				return parts[0], nil
+			}
+		}
+	}
+
+	// Fallback: use first segment
+	for _, subj := range subjects {
+		parts := strings.Split(subj, ".")
+		if len(parts) > 1 {
+			return parts[0], nil
+		}
+	}
+
+	return "", fmt.Errorf("could not derive NATS prefix from knight %s subjects", knightName)
+}
+
 func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -715,6 +761,16 @@ func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 			return
 		}
 
+		// Derive the NATS prefix from the Knight CRD so non-fleet-a knights
+		// (e.g. chelonian, rt-dev) are queried on their own table's subject
+		// instead of the hardcoded FLEET_PREFIX.
+		ctx := r.Context()
+		prefix, err := deriveIntrospectPrefix(ctx, name)
+		if err != nil {
+			slog.Warn("Failed to derive introspect prefix, falling back to FLEET_PREFIX", "knight", name, "error", err)
+			prefix = fleetPrefix // graceful degradation
+		}
+
 		// Forward a validated entry limit (pi-knight defaults to 20 for type=recent)
 		introspectReq := map[string]interface{}{"type": reqType}
 		if limStr := r.URL.Query().Get("limit"); limStr != "" {
@@ -726,10 +782,10 @@ func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 
 		// Knight names in NATS are capitalized (e.g., "Galahad")
 		capitalName := capitalizeKnight(name)
-		subject := fmt.Sprintf("%s.introspect.%s", fleetPrefix, capitalName)
+		subject := fmt.Sprintf("%s.introspect.%s", prefix, capitalName)
 		msg, err := nc.Request(subject, payload, 5*time.Second)
 		if err != nil {
-			slog.Warn("Knight introspect timeout", "knight", name, "error", err)
+			slog.Warn("Knight introspect timeout", "knight", name, "subject", subject, "error", err)
 			http.Error(w, "Knight introspection timeout", http.StatusGatewayTimeout)
 			return
 		}
