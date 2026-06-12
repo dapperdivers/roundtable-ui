@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +21,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -230,6 +231,13 @@ func (rl *rateLimiterT) middleware(next http.Handler) http.Handler {
 }
 
 func main() {
+	// Structured JSON logs so log pipelines (Victoria Logs) can filter on level
+	level := slog.LevelInfo
+	if envOr("LOG_LEVEL", "") == "debug" {
+		level = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+
 	natsURL := envOr("NATS_URL", "nats://nats.database.svc:4222")
 	namespace := envOr("NAMESPACE", "roundtable")
 	port := envOr("PORT", "8080")
@@ -241,31 +249,33 @@ func main() {
 	var err error
 	nc, err = nats.Connect(natsURL)
 	if err != nil {
-		log.Fatalf("NATS connect failed: %v", err)
+		slog.Error("NATS connect failed", "error", err, "url", natsURL)
+		os.Exit(1)
 	}
 	defer nc.Close()
 
 	js, err = jetstream.New(nc)
 	if err != nil {
-		log.Fatalf("JetStream init failed: %v", err)
+		slog.Error("JetStream init failed", "error", err)
+		os.Exit(1)
 	}
-	log.Printf("NATS connected: %s", natsURL)
+	slog.Info("NATS connected", "url", natsURL)
 
 	// Connect to Kubernetes (in-cluster)
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		log.Printf("WARNING: K8s in-cluster config failed (running outside cluster?): %v", err)
+		slog.Warn("K8s in-cluster config failed (running outside cluster?)", "error", err)
 	} else {
 		// Assign globals only on success — a typed-nil client would defeat the
 		// k8sClient != nil availability checks in handlers
 		if cs, csErr := kubernetes.NewForConfig(config); csErr != nil {
-			log.Printf("WARNING: K8s client creation failed: %v", csErr)
+			slog.Warn("K8s client creation failed", "error", csErr)
 		} else {
 			k8sClient = cs
-			log.Println("Kubernetes client connected")
+			slog.Info("Kubernetes client connected")
 		}
 		if dc, dcErr := dynamic.NewForConfig(config); dcErr != nil {
-			log.Printf("WARNING: Dynamic K8s client creation failed: %v", dcErr)
+			slog.Warn("Dynamic K8s client creation failed", "error", dcErr)
 		} else {
 			dynClient = dc
 		}
@@ -276,8 +286,13 @@ func main() {
 
 	// Router
 	r := mux.NewRouter()
+	r.Use(metricsMiddleware)
 	r.Use(authMiddleware)
 	r.Use(rateLimiter.middleware)
+
+	// Prometheus metrics — root level so it stays outside /api auth
+	r.Handle("/metrics", promhttp.Handler()).Methods("GET")
+
 	api := r.PathPrefix("/api").Subrouter()
 
 	// Auth endpoint (handled in middleware, but register route for documentation)
@@ -360,15 +375,16 @@ func main() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
-		log.Println("Shutting down...")
+		slog.Info("Shutting down")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		srv.Shutdown(ctx)
 	}()
 
-	log.Printf("Round Table Dashboard API starting on :%s", port)
+	slog.Info("Round Table Dashboard API starting", "port", port)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatalf("Server error: %v", err)
+		slog.Error("Server error", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -448,7 +464,7 @@ func fleetHandler(namespace string) http.HandlerFunc {
 
 		crList, err := dynClient.Resource(knightGVR).Namespace(namespace).List(r.Context(), metav1.ListOptions{})
 		if err != nil {
-			log.Printf("K8s knight CR list error: %v", err)
+			slog.Error("K8s knight CR list error", "error", err)
 			http.Error(w, "Failed to list fleet", http.StatusInternalServerError)
 			return
 		}
@@ -653,7 +669,7 @@ func knightLogsHandler(namespace string) http.HandlerFunc {
 		})
 		stream, err := req.Stream(ctx)
 		if err != nil {
-			log.Printf("Log stream error for %s: %v", name, err)
+			slog.Error("Log stream error", "knight", name, "error", err)
 			http.Error(w, "Failed to read logs", http.StatusInternalServerError)
 			return
 		}
@@ -713,7 +729,7 @@ func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 		subject := fmt.Sprintf("%s.introspect.%s", fleetPrefix, capitalName)
 		msg, err := nc.Request(subject, payload, 5*time.Second)
 		if err != nil {
-			log.Printf("Knight introspect timeout for %s: %v", name, err)
+			slog.Warn("Knight introspect timeout", "knight", name, "error", err)
 			http.Error(w, "Knight introspection timeout", http.StatusGatewayTimeout)
 			return
 		}
@@ -729,14 +745,14 @@ func taskHistoryHandler(fleetPrefix, streamName string) http.HandlerFunc {
 		ctx := r.Context()
 		stream, err := js.Stream(ctx, streamName)
 		if err != nil {
-			log.Printf("JetStream error: %v", err)
+			slog.Error("JetStream error", "error", err)
 			http.Error(w, "Task history unavailable", http.StatusInternalServerError)
 			return
 		}
 
 		info, err := stream.Info(ctx)
 		if err != nil {
-			log.Printf("JetStream stream info error: %v", err)
+			slog.Error("JetStream stream info error", "error", err)
 			http.Error(w, "Task history unavailable", http.StatusInternalServerError)
 			return
 		}
@@ -831,7 +847,7 @@ func taskDispatchHandler(fleetPrefix string) http.HandlerFunc {
 		})
 
 		if err := nc.Publish(subject, payload); err != nil {
-			log.Printf("NATS publish error: %v", err)
+			slog.Error("NATS publish error", "error", err)
 			http.Error(w, "Failed to dispatch task", http.StatusInternalServerError)
 			return
 		}
@@ -899,7 +915,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			log.Printf("WebSocket upgrade error: %v", err)
+			slog.Error("WebSocket upgrade error", "error", err)
 			return
 		}
 
@@ -923,7 +939,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 
 		// Subscribe to all task and result events (#19: check NATS connection health)
 		if !nc.IsConnected() {
-			log.Printf("NATS not connected, rejecting WS")
+			slog.Warn("NATS not connected, rejecting WS")
 			conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "NATS unavailable"))
 			conn.Close()
 			return
@@ -945,7 +961,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 			safeWrite(data)
 		})
 		if err != nil {
-			log.Printf("NATS task sub error: %v", err)
+			slog.Error("NATS task sub error", "error", err)
 			conn.Close()
 			return
 		}
@@ -966,7 +982,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 			safeWrite(data)
 		})
 		if err != nil {
-			log.Printf("NATS result sub error: %v", err)
+			slog.Error("NATS result sub error", "error", err)
 			taskSub.Unsubscribe()
 			conn.Close()
 			return
@@ -989,7 +1005,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 			safeWrite(data)
 		})
 		if err != nil {
-			log.Printf("NATS mission sub error: %v", err)
+			slog.Error("NATS mission sub error", "error", err)
 			// Non-fatal: missions subject may not exist yet
 			missionSub = nil
 		}
@@ -1011,7 +1027,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 			safeWrite(data)
 		})
 		if err != nil {
-			log.Printf("NATS chain sub error: %v", err)
+			slog.Error("NATS chain sub error", "error", err)
 			// Non-fatal
 			chainSub = nil
 		}
@@ -1171,7 +1187,7 @@ func chainsHandler(namespace string) http.HandlerFunc {
 
 		list, err := dynClient.Resource(chainGVR).Namespace(namespace).List(r.Context(), metav1.ListOptions{})
 		if err != nil {
-			log.Printf("Chain list error: %v", err)
+			slog.Error("Chain list error", "error", err)
 			http.Error(w, "Failed to list chains", http.StatusInternalServerError)
 			return
 		}
@@ -1390,7 +1406,7 @@ func missionsHandler(namespace string) http.HandlerFunc {
 
 		list, err := dynClient.Resource(missionGVR).Namespace(namespace).List(r.Context(), metav1.ListOptions{})
 		if err != nil {
-			log.Printf("Mission list error: %v", err)
+			slog.Error("Mission list error", "error", err)
 			http.Error(w, "Failed to list missions", http.StatusInternalServerError)
 			return
 		}
@@ -1508,7 +1524,7 @@ func missionCreateHandler(namespace string) http.HandlerFunc {
 			metav1.CreateOptions{},
 		)
 		if err != nil {
-			log.Printf("Mission create error: %v", err)
+			slog.Error("Mission create error", "error", err)
 			http.Error(w, fmt.Sprintf("Failed to create mission: %v", err), http.StatusInternalServerError)
 			return
 		}
@@ -1540,7 +1556,7 @@ func missionDeleteHandler(namespace string) http.HandlerFunc {
 
 		err := dynClient.Resource(missionGVR).Namespace(namespace).Delete(r.Context(), name, metav1.DeleteOptions{})
 		if err != nil {
-			log.Printf("Mission delete error: %v", err)
+			slog.Error("Mission delete error", "error", err)
 			http.Error(w, "Failed to delete mission", http.StatusInternalServerError)
 			return
 		}
@@ -1705,7 +1721,7 @@ func roundTablesHandler(namespace string) http.HandlerFunc {
 
 		list, err := dynClient.Resource(roundTableGVR).Namespace(namespace).List(r.Context(), metav1.ListOptions{})
 		if err != nil {
-			log.Printf("RoundTable list error: %v", err)
+			slog.Error("RoundTable list error", "error", err)
 			http.Error(w, "Failed to list roundtables", http.StatusInternalServerError)
 			return
 		}
