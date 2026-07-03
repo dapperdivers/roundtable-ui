@@ -1222,7 +1222,6 @@ type ChainSummary struct {
 	Schedule       string        `json:"schedule,omitempty"`
 	Description    string        `json:"description,omitempty"`
 	Timeout        int           `json:"timeout,omitempty"`
-	Input          string        `json:"input,omitempty"`
 	OutputKnight   string        `json:"outputKnight,omitempty"`
 	RoundTableRef  string        `json:"roundTableRef,omitempty"`
 	MissionRef     string        `json:"missionRef,omitempty"`
@@ -1315,7 +1314,6 @@ func parseChainResource(obj map[string]interface{}, knightDomains map[string]str
 	// Spec metadata the Chains page renders (description, refs, suspension…)
 	chain.Description = getStr(spec, "description")
 	chain.Timeout = getInt(spec, "timeout")
-	chain.Input = getStr(spec, "input")
 	chain.OutputKnight = getStr(spec, "outputKnight")
 	chain.RoundTableRef = getStr(spec, "roundTableRef")
 	chain.MissionRef = getStr(spec, "missionRef")
@@ -1582,6 +1580,18 @@ func missionCreateHandler(namespace string) http.HandlerFunc {
 		if policy, ok := reqBody["cleanupPolicy"].(string); ok {
 			if policy != "Delete" && policy != "Retain" {
 				http.Error(w, "cleanupPolicy must be Delete or Retain", http.StatusBadRequest)
+				return
+			}
+		}
+
+		// The Mission CRD requires planner.knightRef for meta-missions —
+		// reject here so clients get a clean 400 instead of an opaque
+		// CRD-validation error at create time
+		if meta, _ := reqBody["metaMission"].(bool); meta {
+			planner, _ := reqBody["planner"].(map[string]interface{})
+			knightRef, _ := planner["knightRef"].(string)
+			if !validK8sName.MatchString(knightRef) {
+				http.Error(w, "Meta-missions require planner.knightRef (a valid knight name)", http.StatusBadRequest)
 				return
 			}
 		}

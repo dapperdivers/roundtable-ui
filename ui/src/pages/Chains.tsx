@@ -1,8 +1,8 @@
-import { apiGet, apiFetch } from '../lib/api'
+import { apiGet } from '../lib/api'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { RefreshCw, ChevronDown, ChevronRight, Clock, Link, Pause, Play } from 'lucide-react'
 import { getKnightConfig } from '../lib/knights'
-import { PageHeader, RefreshButton, PhaseBadge, EmptyState } from '../components/ui'
+import { PageHeader, RefreshButton, PhaseBadge, EmptyState, ErrorBanner } from '../components/ui'
 import { formatDuration } from '../lib/format'
 import type { Chain, ChainStep } from '../lib/types'
 
@@ -318,6 +318,7 @@ function ChainCard({ chain }: { chain: Chain }) {
 export function ChainsPage() {
   const [chains, setChains] = useState<Chain[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [autoRefresh, setAutoRefresh] = useState(false)
   const autoRefreshInitialized = useRef(false)
 
@@ -330,10 +331,16 @@ export function ChainsPage() {
     abortRef.current = controller
 
     setLoading(true)
-    apiFetch('/api/chains', { signal: controller.signal })
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-      .then((data: Chain[]) => { if (!controller.signal.aborted) setChains(data) })
-      .catch((e) => { if (e.name !== 'AbortError') setChains([]) })
+    apiGet<Chain[]>('/api/chains', { signal: controller.signal })
+      .then((data) => {
+        if (controller.signal.aborted) return
+        setChains(data)
+        setError('')
+      })
+      .catch((e) => {
+        // Keep the last good list on transient failures — surface the error instead
+        if (e.name !== 'AbortError') setError(e instanceof Error ? e.message : 'Failed to load chains')
+      })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
   }, [])
 
@@ -392,6 +399,12 @@ export function ChainsPage() {
         </button>
         <RefreshButton onClick={fetchChains} loading={loading} />
       </PageHeader>
+
+      {error && (
+        <div className="mb-6">
+          <ErrorBanner>Failed to refresh chains: {error} — showing last known state</ErrorBanner>
+        </div>
+      )}
 
       {chains.length === 0 && !loading && (
         <EmptyState icon={Link} title="No chain executions found." />

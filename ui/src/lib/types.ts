@@ -57,7 +57,6 @@ export interface Chain {
   schedule?: string
   description?: string
   timeout?: number
-  input?: string
   outputKnight?: string
   roundTableRef?: string
   missionRef?: string

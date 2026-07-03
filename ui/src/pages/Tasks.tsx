@@ -4,10 +4,11 @@ import { apiGet, apiPost } from '../lib/api'
 import { getKnightConfig } from '../lib/knights'
 import { useFleet } from '../hooks/useFleet'
 import { useToast } from '../components/Toast'
-import { PageHeader, EmptyState } from '../components/ui'
+import { PageHeader, EmptyState, ErrorBanner } from '../components/ui'
+import { formatTimestamp } from '../lib/format'
 
 export function TasksPage() {
-  const { knights } = useFleet()
+  const { knights, error: fleetError } = useFleet(60000)
   const { addToast } = useToast()
   const [knight, setKnight] = useState('')
   const [task, setTask] = useState('')
@@ -67,6 +68,12 @@ export function TasksPage() {
   return (
     <div>
       <PageHeader icon={Scroll} title="Dispatch" />
+
+      {fleetError && knights.length === 0 && (
+        <div className="mb-6">
+          <ErrorBanner>Cannot load the knight roster: {fleetError}</ErrorBanner>
+        </div>
+      )}
 
       {/* Dispatch form */}
       <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-6 mb-8">
@@ -135,7 +142,7 @@ export function TasksPage() {
                 </div>
                 <div className="flex items-center gap-1 text-gray-500 text-xs">
                   <Clock className="w-3 h-3" />
-                  {new Date(r.timestamp).toLocaleTimeString()}
+                  {formatTimestamp(r.timestamp)}
                 </div>
               </div>
               <p className="text-gray-300 text-sm">{r.task}</p>

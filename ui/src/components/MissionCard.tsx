@@ -5,7 +5,7 @@ import type { Mission } from '../hooks/useMissions'
 import { MissionPhaseBadge } from './MissionPhaseBadge'
 import { PlanningResultViewer } from './PlanningResultViewer'
 import { getKnightConfig } from '../lib/knights'
-import { formatRelativeTime, formatDuration } from '../lib/format'
+import { formatRelativeTime, formatDuration, formatCost } from '../lib/format'
 import { phaseColor } from '../lib/status'
 import { Spinner } from './ui'
 
@@ -146,7 +146,7 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
           <div className="flex items-center gap-1">
             <DollarSign className={`w-3 h-3 ${budgetColor}`} />
             <span className={budgetColor}>
-              ${cost.toFixed(2)} / ${parseFloat(mission.costBudgetUSD).toFixed(2)}
+              {formatCost(cost)} / {formatCost(budget)}
             </span>
           </div>
         )}

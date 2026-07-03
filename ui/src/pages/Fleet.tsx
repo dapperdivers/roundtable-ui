@@ -110,12 +110,13 @@ export function FleetPage() {
   return (
     <div>
       {/* Header */}
-      <PageHeader icon={Crown} title="The Round Table">
+      <PageHeader
+        icon={Crown}
+        title="The Round Table"
+        subtitle={`${online}/${total} knights seated • observing the realm`}
+      >
         <RefreshButton onClick={refresh} loading={loading} />
       </PageHeader>
-      <p className="text-gray-400 -mt-4 mb-8">
-        {online}/{total} knights seated • observing the realm
-      </p>
 
       {/* Summary bar */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-4 mb-8">

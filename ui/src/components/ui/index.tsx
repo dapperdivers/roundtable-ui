@@ -12,14 +12,12 @@ import { phaseColor } from '../../lib/status'
 /* Feedback                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Gold ring spinner. `center` wraps it in the classic py-12 block. */
-export function Spinner({ size = 'md', center = false }: { size?: 'sm' | 'md'; center?: boolean }) {
+/** Gold ring spinner. */
+export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' }) {
   const dims = size === 'sm' ? 'w-5 h-5' : 'w-8 h-8'
-  const ring = (
-    <div className={`animate-spin ${dims} border-2 border-roundtable-gold border-t-transparent rounded-full ${center ? 'mx-auto' : ''}`} />
+  return (
+    <div className={`animate-spin ${dims} border-2 border-roundtable-gold border-t-transparent rounded-full`} />
   )
-  if (!center) return ring
-  return <div className="text-center py-12">{ring}</div>
 }
 
 /** Red error banner. */
@@ -50,35 +48,40 @@ export function EmptyState({ icon: Icon, title, sub }: {
 /* Page chrome                                                         */
 /* ------------------------------------------------------------------ */
 
-/** Page title row: gold icon + h1 on the left, actions on the right. */
-export function PageHeader({ icon: Icon, title, children }: {
+/** Page title row: gold icon + h1 (+ optional subtitle) left, actions right. */
+export function PageHeader({ icon: Icon, title, subtitle, children }: {
   icon: ComponentType<{ className?: string }>
   title: string
+  subtitle?: ReactNode
   children?: ReactNode
 }) {
   return (
     <div className="flex items-center justify-between mb-6">
-      <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-        <Icon className="w-8 h-8 text-roundtable-gold" />
-        {title}
-      </h1>
+      <div>
+        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+          <Icon className="w-8 h-8 text-roundtable-gold" />
+          {title}
+        </h1>
+        {subtitle && <p className="text-gray-400 mt-2">{subtitle}</p>}
+      </div>
       {children && <div className="flex items-center gap-3">{children}</div>}
     </div>
   )
 }
 
-export function RefreshButton({ onClick, loading = false, label = 'Refresh' }: {
+export function RefreshButton({ onClick, loading = false, disabled = false }: {
   onClick: () => void
   loading?: boolean
-  label?: string
+  disabled?: boolean
 }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors"
+      disabled={disabled}
+      className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors disabled:opacity-50"
     >
       <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-      {label}
+      Refresh
     </button>
   )
 }
@@ -161,20 +164,17 @@ export function Collapsible({ title, defaultOpen = false, children }: {
   )
 }
 
-/** Centered modal with dimmed backdrop; clicking the backdrop closes. */
-export function Modal({ onClose, title, icon, children, maxWidthClass = 'max-w-2xl' }: {
+/** Centered modal with dimmed backdrop. Closes only via the X button —
+ *  backdrop clicks are ignored so stray clicks can't discard form state. */
+export function Modal({ onClose, title, icon, children }: {
   onClose: () => void
   title: ReactNode
   icon?: ReactNode
   children: ReactNode
-  maxWidthClass?: string
 }) {
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className={`bg-roundtable-slate border border-roundtable-steel rounded-xl w-full ${maxWidthClass} max-h-[90vh] overflow-y-auto`}
-        onClick={e => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-roundtable-steel">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             {icon}

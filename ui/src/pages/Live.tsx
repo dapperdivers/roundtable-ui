@@ -8,7 +8,7 @@ import { parseEvent, parseEventData } from '../lib/events'
 import { FleetGraph } from '../components/FleetGraph'
 import { KnightDetailDrawer } from '../components/KnightDetailDrawer'
 import { PageHeader, StatCard, EmptyState } from '../components/ui'
-import { formatCost } from '../lib/format'
+import { formatCost, formatTimestamp } from '../lib/format'
 
 export function LivePage() {
   const { events, connected } = useWebSocket()
@@ -232,7 +232,7 @@ function EventCard({ event, index, expanded, onToggle }: {
           <span className="text-gray-500">🔧{toolCalls}</span>
         )}
         <span className="text-gray-600 ml-auto flex-shrink-0">
-          {new Date(event.timestamp).toLocaleTimeString()}
+          {formatTimestamp(event.timestamp)}
         </span>
       </div>
       <div className="px-3 pb-2">

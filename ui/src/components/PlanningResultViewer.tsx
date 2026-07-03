@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Brain, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Brain, XCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import type { PlanningResult } from '../hooks/useMissions'
 
 interface PlanningResultViewerProps {
@@ -8,35 +8,58 @@ interface PlanningResultViewerProps {
 
 export function PlanningResultViewer({ result }: PlanningResultViewerProps) {
   const [showPlanOutput, setShowPlanOutput] = useState(false)
+  const failed = !!result.error
+
+  // rawOutput can be tens of KB and the parent re-renders on every poll —
+  // pretty-print once per distinct payload
+  const prettyOutput = useMemo(() => {
+    if (!result.rawOutput) return ''
+    try {
+      return JSON.stringify(JSON.parse(result.rawOutput), null, 2)
+    } catch {
+      return result.rawOutput
+    }
+  }, [result.rawOutput])
 
   return (
-    <div className="bg-roundtable-navy/50 border border-indigo-500/30 rounded-lg p-3">
+    <div className={`bg-roundtable-navy/50 border rounded-lg p-3 ${failed ? 'border-red-500/30' : 'border-indigo-500/30'}`}>
       <div className="flex items-center gap-2 mb-2">
-        <Brain className="w-4 h-4 text-indigo-400" />
-        <span className="text-xs font-medium text-indigo-400">Planning Complete</span>
+        {failed ? (
+          <>
+            <XCircle className="w-4 h-4 text-red-400" />
+            <span className="text-xs font-medium text-red-400">Planning Failed</span>
+          </>
+        ) : (
+          <>
+            <Brain className="w-4 h-4 text-indigo-400" />
+            <span className="text-xs font-medium text-indigo-400">Planning Complete</span>
+          </>
+        )}
       </div>
 
       {/* Resource counts */}
-      <div className="grid grid-cols-3 gap-2 mb-2">
-        <div className="bg-roundtable-navy rounded p-2">
-          <div className="text-xs text-gray-500">Chains</div>
-          <div className="text-sm font-bold text-white">
-            {result.chainsGenerated}
+      {!failed && (
+        <div className="grid grid-cols-3 gap-2 mb-2">
+          <div className="bg-roundtable-navy rounded p-2">
+            <div className="text-xs text-gray-500">Chains</div>
+            <div className="text-sm font-bold text-white">
+              {result.chainsGenerated}
+            </div>
+          </div>
+          <div className="bg-roundtable-navy rounded p-2">
+            <div className="text-xs text-gray-500">Knights</div>
+            <div className="text-sm font-bold text-white">
+              {result.knightsGenerated}
+            </div>
+          </div>
+          <div className="bg-roundtable-navy rounded p-2">
+            <div className="text-xs text-gray-500">Skills</div>
+            <div className="text-sm font-bold text-white">
+              {result.skillsGenerated}
+            </div>
           </div>
         </div>
-        <div className="bg-roundtable-navy rounded p-2">
-          <div className="text-xs text-gray-500">Knights</div>
-          <div className="text-sm font-bold text-white">
-            {result.knightsGenerated}
-          </div>
-        </div>
-        <div className="bg-roundtable-navy rounded p-2">
-          <div className="text-xs text-gray-500">Skills</div>
-          <div className="text-sm font-bold text-white">
-            {result.skillsGenerated}
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Reasoning */}
       {result.reasoning && (
@@ -73,13 +96,7 @@ export function PlanningResultViewer({ result }: PlanningResultViewerProps) {
           </button>
           {showPlanOutput && (
             <pre className="mt-2 text-xs text-gray-300 whitespace-pre-wrap max-h-64 overflow-auto bg-roundtable-navy rounded p-2 border border-indigo-500/30">
-              {(() => {
-                try {
-                  return JSON.stringify(JSON.parse(result.rawOutput), null, 2)
-                } catch {
-                  return result.rawOutput
-                }
-              })()}
+              {prettyOutput}
             </pre>
           )}
         </div>

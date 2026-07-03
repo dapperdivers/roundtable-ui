@@ -1,5 +1,5 @@
 import { apiGet } from '../lib/api'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Crown, Activity, DollarSign, Zap, AlertTriangle, Link2, ArrowRight, TrendingUp, Calendar, ChevronDown, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useFleet } from '../hooks/useFleet'
@@ -8,7 +8,7 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { getKnightConfig, KNIGHT_NAMES } from '../lib/knights'
 import { parseEvent } from '../lib/events'
 import { PageHeader, StatCard, PhaseBadge, ProgressBar, EmptyState } from '../components/ui'
-import { formatCost } from '../lib/format'
+import { formatCost, formatTimestamp } from '../lib/format'
 
 import type { Chain } from '../lib/types'
 
@@ -36,12 +36,15 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
     apiGet<Chain[]>('/api/chains').then(setChains).catch(() => {})
   }, [])
 
-  // Fetch cumulative session costs from each knight on load
+  // Fetch cumulative session costs once the fleet list arrives (reuses the
+  // useFleet poll instead of issuing a second /api/fleet request)
+  const sessionCostsFetched = useRef(false)
   useEffect(() => {
-    (async () => {
+    if (sessionCostsFetched.current || knights.length === 0) return
+    sessionCostsFetched.current = true
+    ;(async () => {
       try {
-        const fleetData = await apiGet<Array<{ name: string }>>('/api/fleet')
-        const names: string[] = fleetData.map((k) => k.name)
+        const names: string[] = knights.map((k) => k.name)
 
         const results = await Promise.allSettled(
           names.map(name =>
@@ -65,7 +68,7 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
         setSessionCosts({ total, perKnight })
       } catch { /* ignore */ }
     })()
-  }, [])
+  }, [knights])
 
   const stats = useMemo(() => {
     let totalCost = 0
@@ -168,11 +171,11 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
 
   return (
     <div>
-      <PageHeader icon={Crown} title="Command Center">
-        <p className="text-gray-400">
-          Fleet status at a glance • {connected ? '🟢 Live' : '🔴 Disconnected'}
-        </p>
-      </PageHeader>
+      <PageHeader
+        icon={Crown}
+        title="Command Center"
+        subtitle={<>Fleet status at a glance • {connected ? '🟢 Live' : '🔴 Disconnected'}</>}
+      />
 
       {/* Top-level metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
@@ -280,7 +283,7 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
                   <span>{e.type === 'task' ? '📤' : '📥'}</span>
                   <span>{cfg?.emoji || '🤖'}</span>
                   <span className="text-gray-400 truncate flex-1">{knight || domain || e.type}</span>
-                  <span className="text-gray-600">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                  <span className="text-gray-600">{formatTimestamp(e.timestamp)}</span>
                 </div>
               )
             })}
@@ -432,7 +435,7 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
                               <span className="text-gray-400 text-xs font-mono truncate max-w-[200px] block">{task.taskId}</span>
                             </td>
                             <td className="py-2">
-                              <span className="text-gray-500 text-xs">{new Date(task.timestamp).toLocaleTimeString()}</span>
+                              <span className="text-gray-500 text-xs">{formatTimestamp(task.timestamp)}</span>
                             </td>
                             <td className="py-2 text-right">
                               <span className="text-roundtable-gold font-medium text-sm">{formatCost(task.cost)}</span>

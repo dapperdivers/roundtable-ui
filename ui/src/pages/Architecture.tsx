@@ -26,20 +26,17 @@ export function ArchitecturePage() {
   const [error, setError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
-    try {
-      setLoading(true)
-      const [rtData, missionsData] = await Promise.all([
-        apiGet<RoundTable[]>('/api/roundtables'),
-        apiGet<any[]>('/api/missions'),
-      ])
-      setRoundTables(rtData)
-      setMissions(missionsData)
-      setError(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
-    } finally {
-      setLoading(false)
-    }
+    setLoading(true)
+    // Tolerate partial failure — render whichever endpoint succeeded
+    const [rt, ms] = await Promise.allSettled([
+      apiGet<RoundTable[]>('/api/roundtables'),
+      apiGet<any[]>('/api/missions'),
+    ])
+    if (rt.status === 'fulfilled') setRoundTables(rt.value)
+    if (ms.status === 'fulfilled') setMissions(ms.value)
+    const failure = [rt, ms].find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+    setError(failure ? (failure.reason instanceof Error ? failure.reason.message : 'Unknown error') : null)
+    setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -118,7 +115,7 @@ export function ArchitecturePage() {
   return (
     <div>
       <PageHeader icon={Network} title="Architecture">
-        <RefreshButton onClick={fetchData} loading={isLoading} />
+        <RefreshButton onClick={fetchData} loading={isLoading} disabled={isLoading} />
       </PageHeader>
       <p className="text-gray-400 mb-8 max-w-2xl">
         The Round Table system consists of a Kubernetes operator managing AI agent fleets,

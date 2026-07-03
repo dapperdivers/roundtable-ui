@@ -1,1 +1,4 @@
 storybook-static
+
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo

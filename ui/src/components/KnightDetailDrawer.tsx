@@ -4,7 +4,7 @@ import { getKnightConfig } from '../lib/knights'
 import { useKnightSession } from '../hooks/useKnightSession'
 import { apiGet, apiGetText } from '../lib/api'
 import { formatCost, formatUptime, formatTimestamp } from '../lib/format'
-import { Drawer, StatCard, Spinner, ErrorBanner, Collapsible } from './ui'
+import { Drawer, StatCard, Spinner, ErrorBanner } from './ui'
 import type { Knight, KnightCondition } from '../hooks/useFleet'
 
 interface Props {
@@ -62,6 +62,9 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
 
   useEffect(() => {
     if (knight) {
+      // Clear the previous knight's detail so a slow/failed fetch can't show
+      // knight A's skills and config under knight B's name
+      setKnightDetail(null)
       refreshAll(knight.name)
       setLogsExpanded(false)
       setLogs('')
@@ -212,14 +215,14 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
           )}
 
           {/* Skills List (from CRD skillsList field) */}
-          {knightDetail?.skillsList && knightDetail.skillsList.length > 0 && (
+          {skills.length > 0 && (
             <div>
               <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
                 <Tag className="w-4 h-4" />
-                Skills ({knightDetail.skillsList.length})
+                Skills ({skills.length})
               </h3>
               <div className="flex flex-wrap gap-2">
-                {knightDetail.skillsList.map((skill, i) => (
+                {skills.map((skill, i) => (
                   <span
                     key={skill}
                     className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs border ${
@@ -272,25 +275,6 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
               </div>
             </div>
           )}
-
-          {/* Skills Section */}
-          <Collapsible
-            key={knight.name}
-            title={<><FileCode className="w-4 h-4" />Knight Skills ({skills.length})</>}
-          >
-            {skills.length > 0 ? (
-              <div className="grid grid-cols-2 gap-2">
-                {skills.map((skill) => (
-                  <div key={skill} className="bg-roundtable-slate border border-roundtable-steel/50 rounded-lg px-3 py-2 text-xs text-gray-300 flex items-center gap-2">
-                    <span className="text-roundtable-gold">✓</span>
-                    <span className="capitalize">{skill.replace(/-/g, ' ')}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-500 text-sm">No skills reported</p>
-            )}
-          </Collapsible>
 
           {/* Nix Packages */}
           {knightDetail?.nixPackages && knightDetail.nixPackages.length > 0 && (

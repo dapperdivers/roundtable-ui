@@ -16,12 +16,21 @@ export class ApiError extends Error {
 }
 
 async function toApiError(res: Response): Promise<ApiError> {
+  // The Go API mixes JSON {"error": ...} bodies with plain-text http.Error
+  // messages (e.g. "TTL must be 60-604800 seconds") — surface both.
   let message = `${res.status} ${res.statusText}`
   try {
-    const body = await res.json()
-    if (body && typeof body.error === 'string') message = body.error
+    const body = (await res.text()).trim()
+    if (body) {
+      try {
+        const parsed = JSON.parse(body)
+        message = typeof parsed?.error === 'string' ? parsed.error : body.slice(0, 300)
+      } catch {
+        message = body.slice(0, 300)
+      }
+    }
   } catch {
-    // non-JSON error body — keep the status line
+    // unreadable body — keep the status line
   }
   return new ApiError(res.status, message)
 }
@@ -53,13 +62,6 @@ export async function apiGetText(url: string): Promise<string> {
 /** POST a JSON body and parse the JSON response. Throws ApiError on non-2xx. */
 export async function apiPost<T>(url: string, body: unknown): Promise<T> {
   const res = await apiFetch(url, { method: 'POST', body: JSON.stringify(body) })
-  if (!res.ok) throw await toApiError(res)
-  return res.json() as Promise<T>
-}
-
-/** DELETE url and parse the JSON response. Throws ApiError on non-2xx. */
-export async function apiDelete<T>(url: string): Promise<T> {
-  const res = await apiFetch(url, { method: 'DELETE' })
   if (!res.ok) throw await toApiError(res)
   return res.json() as Promise<T>
 }

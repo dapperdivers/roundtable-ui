@@ -5,7 +5,7 @@ import { useFleet } from '../hooks/useFleet'
 import { fetchWithTimeout } from '../hooks/useKnightSession'
 import type { SessionEntry, SessionTreeNode, KnightSessionStats } from '../hooks/useKnightSession'
 import { Spinner, ErrorBanner, EmptyState, PageHeader, RefreshButton, StatCard, ProgressBar } from '../components/ui'
-import { formatCost } from '../lib/format'
+import { formatCost, formatTimestamp } from '../lib/format'
 
 const entryTypeIcons: Record<string, string> = {
   user: '📨',
@@ -43,7 +43,7 @@ function TreeNodeView({ node, depth = 0 }: { node: SessionTreeNode & { children?
         {node.childrenCount > 0 && (
           <span className="text-xs text-gray-600">{node.childrenCount}</span>
         )}
-        <span className="text-xs text-gray-600">{new Date(node.timestamp).toLocaleTimeString()}</span>
+        <span className="text-xs text-gray-600">{formatTimestamp(node.timestamp)}</span>
       </div>
       {expanded && hasChildren && (
         <div>
@@ -76,7 +76,7 @@ function ToolCallCard({ entry }: { entry: SessionEntry }) {
         {entry.tokens && (
           <span className="text-gray-600 text-xs">{entry.tokens.input + entry.tokens.output}t</span>
         )}
-        <span className="text-gray-600 text-xs">{new Date(entry.timestamp).toLocaleTimeString()}</span>
+        <span className="text-gray-600 text-xs">{formatTimestamp(entry.timestamp)}</span>
       </div>
       {expanded && (
         <div className="mt-2 space-y-2 border-t border-roundtable-steel/30 pt-2">
