@@ -1,16 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Network, Server, Globe, MessageSquare, Shield, Crown, Cpu, RefreshCw, Target } from 'lucide-react'
-import { authFetch } from '../lib/auth'
+import { apiGet } from '../lib/api'
 import { useFleet } from '../hooks/useFleet'
-
-interface RoundTable {
-  name: string
-  natsPrefix: string
-  activeMissions?: number
-  knightsTotal: number
-  knightsReady: number
-}
+import type { RoundTable } from '../lib/types'
 
 interface ComponentNode {
   id: string
@@ -34,21 +27,12 @@ export function ArchitecturePage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
-      const [rtRes, missionsRes] = await Promise.all([
-        authFetch('/api/roundtables'),
-        authFetch('/api/missions')
+      const [rtData, missionsData] = await Promise.all([
+        apiGet<RoundTable[]>('/api/roundtables'),
+        apiGet<any[]>('/api/missions'),
       ])
-      
-      if (rtRes.ok) {
-        const rtData = await rtRes.json()
-        setRoundTables(rtData)
-      }
-      
-      if (missionsRes.ok) {
-        const missionsData = await missionsRes.json()
-        setMissions(missionsData)
-      }
-      
+      setRoundTables(rtData)
+      setMissions(missionsData)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error')

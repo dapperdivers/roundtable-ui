@@ -1,10 +1,14 @@
-import { authFetch } from '../lib/auth'
 import { useState, useEffect } from 'react'
 import { Scroll, Clock } from 'lucide-react'
-import { getKnightConfig, KNIGHT_CONFIG } from '../lib/knights'
+import { apiGet, apiPost } from '../lib/api'
+import { getKnightConfig } from '../lib/knights'
+import { useFleet } from '../hooks/useFleet'
+import { useToast } from '../components/Toast'
 
 export function TasksPage() {
-  const [knight, setKnight] = useState('galahad')
+  const { knights } = useFleet()
+  const { addToast } = useToast()
+  const [knight, setKnight] = useState('')
   const [task, setTask] = useState('')
   const [dispatching, setDispatching] = useState(false)
   const [results, setResults] = useState<Array<{
@@ -16,13 +20,18 @@ export function TasksPage() {
   }>>([])
   const [fleetPrefix, setFleetPrefix] = useState('fleet-a')
 
+  // Default to the first knight once the fleet loads
+  useEffect(() => {
+    if (!knight && knights.length > 0) setKnight(knights[0].name)
+  }, [knight, knights])
+
+  const selected = knights.find((k) => k.name === knight)
   const config = getKnightConfig(knight)
-  const knightNames = Object.keys(KNIGHT_CONFIG)
+  const domain = selected?.domain ?? ''
 
   // Fetch fleet configuration from backend (#60)
   useEffect(() => {
-    authFetch('/api/config')
-      .then((r) => r.json())
+    apiGet<{ fleetPrefix?: string }>('/api/config')
       .then((data) => {
         if (data.fleetPrefix) setFleetPrefix(data.fleetPrefix)
       })
@@ -30,17 +39,15 @@ export function TasksPage() {
   }, [])
 
   const dispatch = async () => {
-    if (!task.trim()) return
+    if (!task.trim() || !selected) return
     setDispatching(true)
 
     try {
-      const domain = KNIGHT_CONFIG[knight]?.domain || knight
-      const res = await authFetch('/api/tasks/dispatch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ knight, domain, task }),
+      const data = await apiPost<{ task_id: string }>('/api/tasks/dispatch', {
+        knight,
+        domain: selected.domain,
+        task,
       })
-      const data = await res.json()
       setResults((prev) => [{
         taskId: data.task_id,
         knight,
@@ -50,7 +57,7 @@ export function TasksPage() {
       }, ...prev])
       setTask('')
     } catch (e) {
-      console.error('Dispatch failed:', e)
+      addToast(`Dispatch failed: ${e instanceof Error ? e.message : 'unknown error'}`, 'error')
     } finally {
       setDispatching(false)
     }
@@ -73,14 +80,12 @@ export function TasksPage() {
               onChange={(e) => setKnight(e.target.value)}
               className="w-full bg-roundtable-navy border border-roundtable-steel rounded-lg px-3 py-2 text-white"
             >
-              {knightNames.map((k) => {
-                const kc = getKnightConfig(k)
-                return (
-                  <option key={k} value={k}>
-                    {kc.emoji} {k} ({kc.domain})
-                  </option>
-                )
-              })}
+              {knights.length === 0 && <option value="">Loading fleet…</option>}
+              {knights.map((k) => (
+                <option key={k.name} value={k.name}>
+                  {getKnightConfig(k.name).emoji} {k.name} ({k.domain})
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex-1">
@@ -91,12 +96,12 @@ export function TasksPage() {
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && dispatch()}
-                placeholder={`Send a quest to ${config.emoji} ${knight} (${config.domain})...`}
+                placeholder={knight ? `Send a quest to ${config.emoji} ${knight} (${domain})...` : 'Waiting for fleet…'}
                 className="flex-1 bg-roundtable-navy border border-roundtable-steel rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:border-roundtable-gold/50 focus:outline-none"
               />
               <button
                 onClick={dispatch}
-                disabled={dispatching || !task.trim()}
+                disabled={dispatching || !task.trim() || !selected}
                 className="px-6 py-2 bg-roundtable-gold/20 hover:bg-roundtable-gold/30 border border-roundtable-gold/30 rounded-lg text-roundtable-gold font-medium transition-colors disabled:opacity-50"
               >
                 {dispatching ? '...' : 'Dispatch'}
@@ -105,7 +110,7 @@ export function TasksPage() {
           </div>
         </div>
         <p className="text-xs text-gray-500">
-          Dispatching to domain: <span className="text-roundtable-gold font-mono">{config.domain}</span> via NATS subject: <span className="font-mono">{fleetPrefix}.tasks.{config.domain}.*</span>
+          Dispatching to domain: <span className="text-roundtable-gold font-mono">{domain || '—'}</span> via NATS subject: <span className="font-mono">{fleetPrefix}.tasks.{domain || '*'}.*</span>
         </p>
       </div>
 

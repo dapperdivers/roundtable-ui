@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Target, Plus, X, ArrowLeft, Rocket, Brain, Settings } from 'lucide-react'
-import { authFetch } from '../lib/auth'
+import { apiPost } from '../lib/api'
 
 interface MissionForm {
   name: string
@@ -87,6 +87,12 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
   }
 
   const handleSubmit = async () => {
+    // The Mission CRD requires planner.knightRef for meta-missions
+    if (form.metaMission && !form.planner.knightRef.trim()) {
+      setError('Meta-missions require a planner knight (Advanced step)')
+      setStep(2)
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
@@ -109,7 +115,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
       // Add planner config if metaMission is enabled
       if (form.metaMission) {
         body.planner = {
-          knightRef: form.planner.knightRef || undefined,
+          knightRef: form.planner.knightRef.trim(),
           timeout: form.planner.timeout,
           context: form.planner.context || undefined,
           allowSkillGeneration: form.planner.allowSkillGeneration,
@@ -118,14 +124,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
         }
       }
 
-      const res = await authFetch('/api/missions', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) {
-        const data = await res.text()
-        throw new Error(data)
-      }
+      await apiPost('/api/missions', body)
       onCreated()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create mission')
@@ -137,7 +136,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
   const steps = [
     { title: 'Basics', valid: form.name.trim() && form.objective.trim() },
     { title: 'Knights', valid: form.metaMission || form.knights.some(k => k.name.trim()) },
-    { title: 'Advanced', valid: true },
+    { title: 'Advanced', valid: !form.metaMission || !!form.planner.knightRef.trim() },
     { title: 'Review', valid: true },
   ]
 
@@ -382,7 +381,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
                   </div>
 
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Planner Knight Reference (optional)</label>
+                    <label className="block text-xs text-gray-400 mb-1">Planner Knight (required for meta-missions)</label>
                     <input
                       value={form.planner.knightRef}
                       onChange={e => updatePlanner('knightRef', e.target.value)}

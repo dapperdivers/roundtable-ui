@@ -1,59 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Crown, RefreshCw, Shield, DollarSign, ChevronDown, Layers, Settings, CheckSquare } from 'lucide-react'
-import { authFetch } from '../lib/auth'
-
-interface RoundTable {
-  name: string
-  namespace: string
-  phase: string
-  knightsReady: number
-  knightsTotal: number
-  natsPrefix: string
-  costBudgetUSD: string
-  totalCost: string
-  // These may not be in API yet, make optional:
-  warmPool?: {
-    available: number
-    provisioning: number
-    claimed: number
-  }
-  policies?: {
-    maxConcurrentTasks: number
-    costBudgetUSD: string
-    maxKnights: number
-    maxMissions: number
-  }
-  activeMissions?: number
-  totalTasksCompleted?: number
-  description?: string
-  suspended?: boolean
-}
+import { usePolledFetch } from '../hooks/usePolledFetch'
+import type { RoundTable } from '../lib/types'
 
 export function RoundTablesPage() {
-  const [roundTables, setRoundTables] = useState<RoundTable[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data: roundTables, loading, error, refresh } = usePolledFetch<RoundTable[]>('/api/roundtables', 15000, [])
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set())
-
-  const refresh = useCallback(async () => {
-    try {
-      const res = await authFetch('/api/roundtables')
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setRoundTables(data)
-      setError(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    refresh()
-    const interval = setInterval(refresh, 15000)
-    return () => clearInterval(interval)
-  }, [refresh])
 
   const toggleCard = (name: string) => {
     setExpandedCards(prev => {

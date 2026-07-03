@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { X, Activity, Cpu, DollarSign, MessageSquare, Wrench, Clock, ChevronRight, RefreshCw, FileCode, Package, Terminal, ChevronDown, Settings, BarChart2, Tag } from 'lucide-react'
 import { getKnightConfig } from '../lib/knights'
 import { useKnightSession } from '../hooks/useKnightSession'
-import { authFetch } from '../lib/auth'
+import { apiGet, apiGetText } from '../lib/api'
 import type { Knight, GeneratedSkill, KnightCondition } from '../hooks/useFleet'
 
 interface Props {
@@ -70,11 +70,7 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
   const fetchKnightDetail = async (knightName: string) => {
     setDetailLoading(true)
     try {
-      const res = await authFetch(`/api/fleet/${knightName}`)
-      if (res.ok) {
-        const data = await res.json()
-        setKnightDetail(data)
-      }
+      setKnightDetail(await apiGet<Knight>(`/api/fleet/${knightName}`))
     } catch (e) {
       console.error('Failed to fetch knight detail:', e)
     } finally {
@@ -93,13 +89,7 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
   const fetchLogs = async (knightName: string) => {
     setLogsLoading(true)
     try {
-      const res = await authFetch(`/api/fleet/${knightName}/logs`)
-      if (res.ok) {
-        const text = await res.text()
-        setLogs(text)
-      } else {
-        setLogs(`Error: ${res.status} ${res.statusText}`)
-      }
+      setLogs(await apiGetText(`/api/fleet/${knightName}/logs`))
     } catch (e) {
       setLogs(`Error: ${e instanceof Error ? e.message : 'Unknown error'}`)
     } finally {

@@ -1,4 +1,4 @@
-import { authFetch } from '../lib/auth'
+import { apiGet } from '../lib/api'
 import { useState, useEffect, useMemo } from 'react'
 import { Crown, Activity, DollarSign, Zap, AlertTriangle, Link2, ArrowRight, TrendingUp, Calendar, BarChart3, ChevronDown, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -40,16 +40,15 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
   const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month'>('week')
 
   useEffect(() => {
-    authFetch('/api/chains').then(r => r.json()).then(setChains).catch(() => {})
+    apiGet<ChainSummary[]>('/api/chains').then(setChains).catch(() => {})
   }, [])
 
   // Fetch cumulative session costs from each knight on load
   useEffect(() => {
     (async () => {
       try {
-        const fleetRes = await authFetch('/api/fleet')
-        const fleetData = await fleetRes.json()
-        const names: string[] = (fleetData || []).map((k: any) => k.name)
+        const fleetData = await apiGet<Array<{ name: string }>>('/api/fleet')
+        const names: string[] = fleetData.map((k) => k.name)
 
         const results = await Promise.allSettled(
           names.map(name =>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Target, Clock, Users, Link2, DollarSign, FileText, Brain, ChevronDown, ChevronUp, Loader2, CheckCircle, XCircle, Zap, Hash } from 'lucide-react'
-import { authFetch } from '../lib/auth'
+import { apiGet } from '../lib/api'
 import type { Mission } from '../hooks/useMissions'
 import { MissionPhaseBadge } from './MissionPhaseBadge'
 import { getKnightConfig } from '../lib/knights'
@@ -41,8 +41,7 @@ function MissionResults({ name }: { name: string }) {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    authFetch(`/api/missions/${name}/results`)
-      .then(r => { if (!r.ok) throw new Error('Not found'); return r.json() })
+    apiGet<Record<string, unknown>>(`/api/missions/${name}/results`)
       .then(d => setData(d))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))

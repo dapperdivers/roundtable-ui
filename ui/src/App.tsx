@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
-import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard, Target, DollarSign, LogOut, Crown, Network } from 'lucide-react'
+import { Swords, Shield, Scroll, GitGraph, BookOpen, Link2, TreePine, Menu, X, LayoutDashboard, Target, DollarSign, Crown, Network } from 'lucide-react'
 import { FleetPage } from './pages/Fleet'
 import { TasksPage } from './pages/Tasks'
 import { BriefingsPage } from './pages/Briefings'
@@ -11,13 +11,11 @@ import { DashboardPage } from './pages/Dashboard'
 import { MissionsPage } from './pages/Missions'
 import { CostDashboardPage } from './pages/CostDashboard'
 import { ArchitecturePage } from './pages/Architecture'
-import { LoginPage } from './pages/Login'
 import { RoundTablesPage } from './pages/RoundTables'
 import { ToastProvider, useToast } from './components/Toast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { useWebSocket, WebSocketProvider } from './hooks/useWebSocket'
 import { useTaskNotifications } from './hooks/useTaskNotifications'
-import { isAuthenticated, clearApiKey } from './lib/auth'
 
 function NotificationWatcher() {
   const { events } = useWebSocket()
@@ -43,60 +41,9 @@ const navItems = [
 export default function App() {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [authed, setAuthed] = useState<boolean | null>(null) // null = checking
-
-  // Check auth state on mount and listen for logout events
-  const checkAuth = useCallback(() => {
-    // Try to reach the API — if no key is configured server-side, we're always authed
-    fetch('/api/health').then(res => {
-      if (res.ok) {
-        // Health is always accessible. Check if auth is required by testing a protected route.
-        fetch('/api/config', {
-          headers: isAuthenticated() ? { 'Authorization': `Bearer ${localStorage.getItem('roundtable_api_key')}` } : {},
-        }).then(r => {
-          if (r.ok) {
-            setAuthed(true)
-          } else if (r.status === 401) {
-            setAuthed(false)
-          } else {
-            // API error but not auth — assume authed (no key configured)
-            setAuthed(true)
-          }
-        }).catch(() => setAuthed(true))
-      } else {
-        setAuthed(true) // Can't reach API, let it fail naturally
-      }
-    }).catch(() => setAuthed(true))
-  }, [])
-
-  useEffect(() => {
-    checkAuth()
-    const onLogout = () => setAuthed(false)
-    window.addEventListener('auth:logout', onLogout)
-    return () => window.removeEventListener('auth:logout', onLogout)
-  }, [checkAuth])
 
   // Close sidebar on navigation (mobile)
   useEffect(() => { setSidebarOpen(false) }, [location.pathname])
-
-  const handleLogout = () => {
-    clearApiKey()
-    setAuthed(false)
-  }
-
-  // Show loading while checking auth
-  if (authed === null) {
-    return (
-      <div className="min-h-screen bg-roundtable-navy flex items-center justify-center">
-        <div className="animate-spin w-8 h-8 border-2 border-roundtable-gold border-t-transparent rounded-full" />
-      </div>
-    )
-  }
-
-  // Show login if not authenticated
-  if (!authed) {
-    return <LoginPage onLogin={() => setAuthed(true)} />
-  }
 
   return (
     <WebSocketProvider>
@@ -154,14 +101,7 @@ export default function App() {
           })}
         </div>
 
-        <div className="p-4 border-t border-roundtable-steel space-y-2">
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Logout</span>
-          </button>
+        <div className="p-4 border-t border-roundtable-steel">
           <p className="text-xs text-gray-500 text-center">
             ⚔️ Round Table v1.0.0
           </p>

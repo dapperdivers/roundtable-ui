@@ -1,4 +1,4 @@
-import { authFetch } from '../lib/auth'
+import { apiGet, apiFetch } from '../lib/api'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { RefreshCw, ChevronDown, ChevronRight, Clock, Pause, Play } from 'lucide-react'
 import { getKnightConfig } from '../lib/knights'
@@ -198,8 +198,7 @@ function StepKVOutput({ chainName, stepName }: { chainName: string; stepName: st
   useEffect(() => {
     setLoading(true)
     setError('')
-    authFetch(`/api/chains/${chainName}/steps/${stepName}/output`)
-      .then(r => { if (!r.ok) throw new Error('Not found'); return r.json() })
+    apiGet<Record<string, unknown>>(`/api/chains/${chainName}/steps/${stepName}/output`)
       .then(d => setData(d))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -395,8 +394,8 @@ export function ChainsPage() {
     abortRef.current = controller
 
     setLoading(true)
-    authFetch('/api/chains', { signal: controller.signal })
-      .then(r => r.json())
+    apiFetch('/api/chains', { signal: controller.signal })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
       .then((data: ChainRun[]) => { if (!controller.signal.aborted) setChains(data) })
       .catch((e) => { if (e.name !== 'AbortError') setChains([]) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })

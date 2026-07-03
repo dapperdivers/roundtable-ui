@@ -1,4 +1,4 @@
-import { authFetch } from '../lib/auth'
+import { apiGet, apiGetText } from '../lib/api'
 import { useState, useEffect } from 'react'
 import { BookOpen, Calendar, FileText, ChevronLeft, ChevronRight, Loader2, Clock } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -52,8 +52,7 @@ export function BriefingsPage() {
   const [contentError, setContentError] = useState(false)
 
   useEffect(() => {
-    authFetch('/api/briefings')
-      .then((r) => r.json())
+    apiGet<string[]>('/api/briefings')
       .then((data) => {
         // Sort newest first
         const sorted = data.sort().reverse()
@@ -75,14 +74,7 @@ export function BriefingsPage() {
       setContent('')
       
       const date = selected.replace('.md', '')
-      // FIX: Use authFetch instead of plain fetch
-      authFetch(`/api/briefings/${date}`)
-        .then((r) => {
-          if (!r.ok) {
-            throw new Error('Not found')
-          }
-          return r.text()
-        })
+      apiGetText(`/api/briefings/${date}`)
         .then((text) => {
           setContent(text)
           setContentLoading(false)
