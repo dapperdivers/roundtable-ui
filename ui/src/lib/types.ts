@@ -36,20 +36,32 @@ export interface ChainStep {
   knight: string
   domain: string
   phase: string
-  startTime?: string
-  completionTime?: string
-  result?: string
-  dependsOn?: string[]
-  retryCount?: number
+  startTime: string | null
+  completionTime: string | null
+  result: string | null
+  dependsOn: string[] | null
+  retryCount: number
+  continueOnFailure?: boolean
+  outputPath?: string
+  maxRetries?: number
 }
 
 export interface Chain {
   name: string
   namespace: string
   phase: string
-  currentStep?: string
-  startTime?: string
-  completionTime?: string
-  steps: ChainStep[]
+  currentStep: string
+  startTime: string | null
+  completionTime: string | null
+  steps: ChainStep[] | null
   schedule?: string
+  description?: string
+  timeout?: number
+  input?: string
+  outputKnight?: string
+  roundTableRef?: string
+  missionRef?: string
+  suspended?: boolean
+  runsCompleted?: number
+  runsFailed?: number
 }

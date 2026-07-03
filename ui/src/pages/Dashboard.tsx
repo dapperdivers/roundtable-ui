@@ -10,12 +10,7 @@ import { parseEvent } from '../lib/events'
 import { PageHeader, StatCard, PhaseBadge, ProgressBar, EmptyState } from '../components/ui'
 import { formatCost } from '../lib/format'
 
-interface ChainSummary {
-  name: string
-  phase: string
-  startTime: string | null
-  steps: { name: string; phase: string; knight: string }[]
-}
+import type { Chain } from '../lib/types'
 
 interface CostEntry {
   knight: string
@@ -32,13 +27,13 @@ function formatDate(date: Date): string {
 export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpanded?: boolean } = {}) {
   const { knights } = useFleet()
   const { events, connected } = useWebSocket()
-  const [chains, setChains] = useState<ChainSummary[]>([])
+  const [chains, setChains] = useState<Chain[]>([])
   const [sessionCosts, setSessionCosts] = useState<{ total: number; perKnight: Record<string, number> }>({ total: 0, perKnight: {} })
   const [costExpanded, setCostExpanded] = useState(defaultCostExpanded)
   const [timeRange, setTimeRange] = useState<'day' | 'week' | 'month'>('week')
 
   useEffect(() => {
-    apiGet<ChainSummary[]>('/api/chains').then(setChains).catch(() => {})
+    apiGet<Chain[]>('/api/chains').then(setChains).catch(() => {})
   }, [])
 
   // Fetch cumulative session costs from each knight on load

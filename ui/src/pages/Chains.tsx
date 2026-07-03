@@ -4,41 +4,8 @@ import { RefreshCw, ChevronDown, ChevronRight, Clock, Link, Pause, Play } from '
 import { getKnightConfig } from '../lib/knights'
 import { PageHeader, RefreshButton, PhaseBadge, EmptyState } from '../components/ui'
 import { formatDuration } from '../lib/format'
+import type { Chain, ChainStep } from '../lib/types'
 
-interface ChainStep {
-  name: string
-  knight: string
-  domain: string
-  phase: string
-  startTime: string | null
-  completionTime: string | null
-  result: string | null
-  dependsOn: string[] | null
-  retryCount: number
-  continueOnFailure?: boolean
-  outputPath?: string
-  maxRetries?: number
-}
-
-interface ChainRun {
-  name: string
-  namespace: string
-  phase: string
-  currentStep: string
-  startTime: string | null
-  completionTime: string | null
-  steps: ChainStep[] | null
-  schedule?: string
-  description?: string
-  timeout?: number
-  input?: string
-  outputKnight?: string
-  roundTableRef?: string
-  missionRef?: string
-  suspended?: boolean
-  runsCompleted?: number
-  runsFailed?: number
-}
 
 /** Assign each step a column (x) based on topological order of dependencies */
 function layoutSteps(steps: ChainStep[]): Map<string, { col: number; row: number }> {
@@ -245,7 +212,7 @@ function StepDetail({ step, chainName }: { step: ChainStep; chainName: string })
   )
 }
 
-function ChainCard({ chain }: { chain: ChainRun }) {
+function ChainCard({ chain }: { chain: Chain }) {
   const [expanded, setExpanded] = useState(false)
   const [selectedStep, setSelectedStep] = useState<string | null>(null)
 
@@ -349,7 +316,7 @@ function ChainCard({ chain }: { chain: ChainRun }) {
 }
 
 export function ChainsPage() {
-  const [chains, setChains] = useState<ChainRun[]>([])
+  const [chains, setChains] = useState<Chain[]>([])
   const [loading, setLoading] = useState(true)
   const [autoRefresh, setAutoRefresh] = useState(false)
   const autoRefreshInitialized = useRef(false)
@@ -365,7 +332,7 @@ export function ChainsPage() {
     setLoading(true)
     apiFetch('/api/chains', { signal: controller.signal })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-      .then((data: ChainRun[]) => { if (!controller.signal.aborted) setChains(data) })
+      .then((data: Chain[]) => { if (!controller.signal.aborted) setChains(data) })
       .catch((e) => { if (e.name !== 'AbortError') setChains([]) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
   }, [])
