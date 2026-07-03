@@ -1,12 +1,14 @@
 import { apiGet } from '../lib/api'
 import { useState, useEffect, useMemo } from 'react'
-import { Crown, Activity, DollarSign, Zap, AlertTriangle, Link2, ArrowRight, TrendingUp, Calendar, BarChart3, ChevronDown, ChevronRight } from 'lucide-react'
+import { Crown, Activity, DollarSign, Zap, AlertTriangle, Link2, ArrowRight, TrendingUp, Calendar, ChevronDown, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useFleet } from '../hooks/useFleet'
 import { fetchWithTimeout } from '../hooks/useKnightSession'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getKnightConfig, KNIGHT_NAMES } from '../lib/knights'
 import { parseEvent } from '../lib/events'
+import { PageHeader, StatCard, PhaseBadge, ProgressBar, EmptyState } from '../components/ui'
+import { formatCost } from '../lib/format'
 
 interface ChainSummary {
   name: string
@@ -21,10 +23,6 @@ interface CostEntry {
   timestamp: string
   taskId: string
   success: boolean
-}
-
-function formatCost(cost: number): string {
-  return cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`
 }
 
 function formatDate(date: Date): string {
@@ -175,26 +173,20 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Crown className="w-8 h-8 text-roundtable-gold" />
-            Command Center
-          </h1>
-          <p className="text-gray-400 mt-1">
-            Fleet status at a glance • {connected ? '🟢 Live' : '🔴 Disconnected'}
-          </p>
-        </div>
-      </div>
+      <PageHeader icon={Crown} title="Command Center">
+        <p className="text-gray-400">
+          Fleet status at a glance • {connected ? '🟢 Live' : '🔴 Disconnected'}
+        </p>
+      </PageHeader>
 
       {/* Top-level metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
-        <MetricCard label="Knights Online" value={`${online}/${knights.length}`} color="text-green-400" icon={<Zap className="w-5 h-5" />} />
-        <MetricCard label="Tasks Dispatched" value={stats.totalTasks} color="text-blue-400" icon={<Activity className="w-5 h-5" />} />
-        <MetricCard label="Completed" value={stats.totalResults} color="text-green-400" />
-        <MetricCard label="Failures" value={stats.failures} color={stats.failures > 0 ? 'text-red-400' : 'text-gray-400'} icon={stats.failures > 0 ? <AlertTriangle className="w-5 h-5" /> : undefined} />
-        <MetricCard label="Session Cost" value={formatCost(stats.totalCost)} color="text-roundtable-gold" icon={<DollarSign className="w-5 h-5" />} />
-        <MetricCard label="Active Chains" value={runningChains.length} color={runningChains.length > 0 ? 'text-blue-400' : 'text-gray-400'} icon={<Link2 className="w-5 h-5" />} />
+        <StatCard label="Knights Online" value={`${online}/${knights.length}`} color="text-green-400" icon={<Zap className="w-5 h-5" />} />
+        <StatCard label="Tasks Dispatched" value={stats.totalTasks} color="text-blue-400" icon={<Activity className="w-5 h-5" />} />
+        <StatCard label="Completed" value={stats.totalResults} color="text-green-400" />
+        <StatCard label="Failures" value={stats.failures} color={stats.failures > 0 ? 'text-red-400' : 'text-gray-400'} icon={stats.failures > 0 ? <AlertTriangle className="w-5 h-5" /> : undefined} />
+        <StatCard label="Session Cost" value={formatCost(stats.totalCost)} color="text-roundtable-gold" icon={<DollarSign className="w-5 h-5" />} />
+        <StatCard label="Active Chains" value={runningChains.length} color={runningChains.length > 0 ? 'text-blue-400' : 'text-gray-400'} icon={<Link2 className="w-5 h-5" />} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -231,7 +223,7 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
             </Link>
           </div>
           {stats.topKnights.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-4">No cost data yet</p>
+            <EmptyState title="No cost data yet" />
           ) : (
             <div className="space-y-3">
               {stats.topKnights.map(([name, cost]) => {
@@ -240,9 +232,8 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
                 return (
                   <div key={name} className="flex items-center gap-3">
                     <span className="w-20 text-sm text-gray-300 truncate">{cfg.emoji} {name}</span>
-                    <div className="flex-1 h-4 bg-roundtable-navy rounded-full overflow-hidden">
-                      <div className="h-full bg-roundtable-gold/40 rounded-full transition-all"
-                        style={{ width: `${(cost / maxCost) * 100}%` }} />
+                    <div className="flex-1">
+                      <ProgressBar percent={(cost / maxCost) * 100} fillClass="bg-roundtable-gold/40" heightClass="h-4" />
                     </div>
                     <span className="text-sm text-roundtable-gold w-16 text-right">{formatCost(cost)}</span>
                   </div>
@@ -261,24 +252,18 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
             </Link>
           </div>
           {chains.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-4">No chains configured</p>
+            <EmptyState title="No chains configured" />
           ) : (
             <div className="space-y-2">
-              {chains.map(chain => {
-                const phaseColor = chain.phase === 'Completed' ? 'text-green-400'
-                  : chain.phase === 'Failed' ? 'text-red-400'
-                  : chain.phase === 'Running' || chain.phase === 'StepRunning' ? 'text-blue-400'
-                  : 'text-gray-400'
-                return (
-                  <div key={chain.name} className="flex items-center justify-between py-2 border-b border-roundtable-steel/30 last:border-0">
-                    <span className="text-sm text-gray-300">{chain.name}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">{(chain.steps || []).length} steps</span>
-                      <span className={`text-xs font-medium ${phaseColor}`}>{chain.phase || 'Pending'}</span>
-                    </div>
+              {chains.map(chain => (
+                <div key={chain.name} className="flex items-center justify-between py-2 border-b border-roundtable-steel/30 last:border-0">
+                  <span className="text-sm text-gray-300">{chain.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">{(chain.steps || []).length} steps</span>
+                    <PhaseBadge phase={chain.phase || 'Pending'} />
                   </div>
-                )
-              })}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -305,7 +290,7 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
               )
             })}
             {events.length === 0 && (
-              <p className="text-gray-500 text-sm text-center py-4">Waiting for activity...</p>
+              <EmptyState title="Waiting for activity..." />
             )}
           </div>
         </div>
@@ -365,7 +350,7 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
                   <DollarSign className="w-4 h-4 text-roundtable-gold" /> Cost by Knight
                 </h3>
                 {costPanelData.costByKnight.length === 0 ? (
-                  <p className="text-gray-500 text-sm text-center py-6">No cost data available</p>
+                  <EmptyState title="No cost data available" />
                 ) : (
                   <div className="space-y-3">
                     {costPanelData.costByKnight.map(({ knight, cost, tasks, failures }) => {
@@ -384,9 +369,7 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
                               <span className="text-roundtable-gold font-medium">{formatCost(cost)}</span>
                             </div>
                           </div>
-                          <div className="h-2 bg-roundtable-navy rounded-full overflow-hidden">
-                            <div className="h-full bg-roundtable-gold/40 rounded-full transition-all" style={{ width: `${barWidth}%` }} />
-                          </div>
+                          <ProgressBar percent={barWidth} fillClass="bg-roundtable-gold/40" heightClass="h-2" />
                         </div>
                       )
                     })}
@@ -400,7 +383,7 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
                   <Calendar className="w-4 h-4 text-blue-400" /> Daily Cost Trend
                 </h3>
                 {costPanelData.dailyCosts.length === 0 ? (
-                  <p className="text-gray-500 text-sm text-center py-6">No trend data available</p>
+                  <EmptyState title="No trend data available" />
                 ) : (
                   <div className="space-y-2">
                     {costPanelData.dailyCosts.map(({ date, cost }) => {
@@ -411,9 +394,7 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
                             <span className="text-gray-400">{date}</span>
                             <span className="text-roundtable-gold font-medium">{formatCost(cost)}</span>
                           </div>
-                          <div className="h-2 bg-roundtable-navy rounded-full overflow-hidden">
-                            <div className="h-full bg-blue-400/40 rounded-full transition-all" style={{ width: `${(cost / maxCost) * 100}%` }} />
-                          </div>
+                          <ProgressBar percent={(cost / maxCost) * 100} fillClass="bg-blue-400/40" heightClass="h-2" />
                         </div>
                       )
                     })}
@@ -428,7 +409,7 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
                 <TrendingUp className="w-4 h-4 text-green-400" /> Most Expensive Tasks
               </h3>
               {costPanelData.topTasks.length === 0 ? (
-                <p className="text-gray-500 text-sm text-center py-6">No task data available</p>
+                <EmptyState title="No task data available" />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
@@ -477,20 +458,6 @@ export function DashboardPage({ defaultCostExpanded = false }: { defaultCostExpa
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function MetricCard({ label, value, color, icon }: {
-  label: string; value: string | number; color: string; icon?: React.ReactNode
-}) {
-  return (
-    <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-gray-400 text-xs">{label}</p>
-        {icon && <span className={color}>{icon}</span>}
-      </div>
-      <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
     </div>
   )
 }

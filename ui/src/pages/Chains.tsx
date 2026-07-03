@@ -1,7 +1,9 @@
 import { apiGet, apiFetch } from '../lib/api'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { RefreshCw, ChevronDown, ChevronRight, Clock, Pause, Play } from 'lucide-react'
+import { RefreshCw, ChevronDown, ChevronRight, Clock, Link, Pause, Play } from 'lucide-react'
 import { getKnightConfig } from '../lib/knights'
+import { PageHeader, RefreshButton, PhaseBadge, EmptyState } from '../components/ui'
+import { formatDuration } from '../lib/format'
 
 interface ChainStep {
   name: string
@@ -36,39 +38,6 @@ interface ChainRun {
   suspended?: boolean
   runsCompleted?: number
   runsFailed?: number
-}
-
-const phaseColors: Record<string, string> = {
-  // Chain phases
-  Idle: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  Pending: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  Running: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  StepRunning: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  Succeeded: 'bg-green-500/20 text-green-400 border-green-500/30',
-  Completed: 'bg-green-500/20 text-green-400 border-green-500/30', // Legacy alias
-  PartiallySucceeded: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  Failed: 'bg-red-500/20 text-red-400 border-red-500/30',
-  Suspended: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  Skipped: 'bg-gray-500/20 text-gray-500 border-gray-500/30',
-}
-
-function PhaseBadge({ phase }: { phase: string }) {
-  const cls = phaseColors[phase] || phaseColors.Pending
-  return (
-    <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${cls}`}>
-      {phase}
-    </span>
-  )
-}
-
-function formatDuration(start: string | null, end: string | null): string {
-  if (!start) return '—'
-  const s = new Date(start).getTime()
-  const e = end ? new Date(end).getTime() : Date.now()
-  const sec = Math.round((e - s) / 1000)
-  if (sec < 60) return `${sec}s`
-  if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`
-  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`
 }
 
 /** Assign each step a column (x) based on topological order of dependencies */
@@ -436,36 +405,29 @@ export function ChainsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-white">⛓️ Chain Executions</h1>
-        <div className="flex items-center gap-3">
-          {autoRefresh && (
-            <span className="flex items-center gap-1.5 text-xs text-blue-400">
-              <RefreshCw className="w-3 h-3 animate-spin" />
-              Auto-refreshing every 5s
-            </span>
-          )}
-          <button
-            onClick={() => setAutoRefresh(a => !a)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${
-              autoRefresh
-                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                : 'bg-roundtable-steel/50 text-gray-400 hover:text-gray-300'
-            }`}
-          >
-            {autoRefresh ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-            Auto
-          </button>
-          <button onClick={fetchChains}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        </div>
-      </div>
+      <PageHeader icon={Link} title="Chain Executions">
+        {autoRefresh && (
+          <span className="flex items-center gap-1.5 text-xs text-blue-400">
+            <RefreshCw className="w-3 h-3 animate-spin" />
+            Auto-refreshing every 8s
+          </span>
+        )}
+        <button
+          onClick={() => setAutoRefresh(a => !a)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+            autoRefresh
+              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+              : 'bg-roundtable-steel/50 text-gray-400 hover:text-gray-300'
+          }`}
+        >
+          {autoRefresh ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+          Auto
+        </button>
+        <RefreshButton onClick={fetchChains} loading={loading} />
+      </PageHeader>
 
       {chains.length === 0 && !loading && (
-        <p className="text-gray-500 text-center py-12">No chain executions found.</p>
+        <EmptyState icon={Link} title="No chain executions found." />
       )}
 
       <div className="space-y-3">

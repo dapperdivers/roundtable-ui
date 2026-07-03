@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '../lib/api'
 import { getKnightConfig } from '../lib/knights'
 import { useFleet } from '../hooks/useFleet'
 import { useToast } from '../components/Toast'
+import { PageHeader, EmptyState } from '../components/ui'
 
 export function TasksPage() {
   const { knights } = useFleet()
@@ -65,10 +66,7 @@ export function TasksPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-white flex items-center gap-3 mb-8">
-        <Scroll className="w-8 h-8 text-roundtable-gold" />
-        Dispatch
-      </h1>
+      <PageHeader icon={Scroll} title="Dispatch" />
 
       {/* Dispatch form */}
       <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-6 mb-8">
@@ -118,7 +116,7 @@ export function TasksPage() {
       <h2 className="text-xl font-bold text-white mb-4">Recent Dispatches</h2>
       <div className="space-y-3 mb-10">
         {results.length === 0 && (
-          <p className="text-gray-500 text-center py-8">No quests dispatched yet. Send one above!</p>
+          <EmptyState title="No quests dispatched yet. Send one above!" />
         )}
         {results.map((r) => {
           const kc = getKnightConfig(r.knight)

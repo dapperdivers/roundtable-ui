@@ -3,30 +3,13 @@ import { X, Activity, Cpu, DollarSign, MessageSquare, Wrench, Clock, ChevronRigh
 import { getKnightConfig } from '../lib/knights'
 import { useKnightSession } from '../hooks/useKnightSession'
 import { apiGet, apiGetText } from '../lib/api'
-import type { Knight, GeneratedSkill, KnightCondition } from '../hooks/useFleet'
+import { formatCost, formatUptime, formatTimestamp } from '../lib/format'
+import { Drawer, StatCard, Spinner, ErrorBanner, Collapsible } from './ui'
+import type { Knight, KnightCondition } from '../hooks/useFleet'
 
 interface Props {
   knight: Knight | null
   onClose: () => void
-}
-
-function formatCost(cost: number): string {
-  return cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`
-}
-
-function formatUptime(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  if (h > 0) return `${h}h ${m}m`
-  return `${m}m`
-}
-
-function formatTimestamp(ts: string): string {
-  try {
-    return new Date(ts).toLocaleTimeString()
-  } catch {
-    return ts
-  }
 }
 
 const entryTypeColors: Record<string, string> = {
@@ -38,32 +21,12 @@ const entryTypeColors: Record<string, string> = {
   compaction: 'bg-red-500/20 text-red-400',
 }
 
-// Knight skills by domain (from roundtable CRDs)
-const knightSkills: Record<string, string[]> = {
-  galahad: ['security-auditing', 'vulnerability-scanning', 'penetration-testing', 'compliance-checking'],
-  percival: ['code-review', 'refactoring', 'testing', 'documentation'],
-  gawain: ['cost-analysis', 'budget-tracking', 'resource-optimization', 'financial-reporting'],
-  tristan: ['infrastructure-management', 'cluster-operations', 'deployment-automation', 'monitoring'],
-  lancelot: ['architecture-design', 'system-integration', 'performance-optimization', 'scalability'],
-  bedivere: ['data-analysis', 'reporting', 'visualization', 'insights'],
-  gareth: ['workflow-automation', 'task-scheduling', 'orchestration', 'integration'],
-  kay: ['user-support', 'troubleshooting', 'knowledge-base', 'training'],
-  bors: ['quality-assurance', 'testing-automation', 'validation', 'verification'],
-  ector: ['content-generation', 'documentation', 'translation', 'summarization'],
-  lamorak: ['research', 'analysis', 'investigation', 'intelligence-gathering'],
-  pellinore: ['exploration', 'discovery', 'prototyping', 'experimentation'],
-  agravain: ['policy-enforcement', 'compliance', 'governance', 'audit'],
-  tor: ['messaging', 'communication', 'coordination', 'notification'],
-  patsy: ['assistance', 'coordination', 'task-delegation', 'collaboration'],
-}
-
 export function KnightDetailDrawer({ knight, onClose }: Props) {
   const { stats, recent, loading, error, fetchStats, fetchRecent } = useKnightSession()
   const [recentLoading, setRecentLoading] = useState(false)
   const [logs, setLogs] = useState<string>('')
   const [logsLoading, setLogsLoading] = useState(false)
   const [logsExpanded, setLogsExpanded] = useState(false)
-  const [skillsExpanded, setSkillsExpanded] = useState(false)
   const [knightDetail, setKnightDetail] = useState<Knight | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
@@ -101,7 +64,6 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
     if (knight) {
       refreshAll(knight.name)
       setLogsExpanded(false)
-      setSkillsExpanded(false)
       setLogs('')
     }
   }, [knight])
@@ -109,17 +71,12 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
   if (!knight) return null
 
   const config = getKnightConfig(knight.name)
-  const skills = knightSkills[knight.name] || []
+  const skills = knightDetail?.skillsList ?? knight.skillsList ?? []
 
   return (
-    <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
-
-      {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-[520px] bg-roundtable-navy border-l border-roundtable-steel z-50 overflow-y-auto">
+    <Drawer onClose={onClose} widthClass="w-[520px]">
         {/* Header */}
-        <div className="sticky top-0 bg-roundtable-navy border-b border-roundtable-steel p-4 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-roundtable-slate border-b border-roundtable-steel p-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
             <span className="text-3xl">{config.emoji}</span>
             <div>
@@ -152,16 +109,16 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
 
           {loading && (
             <div className="text-center py-8">
-              <div className="animate-spin w-6 h-6 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-2" />
+              <div className="flex justify-center mb-2"><Spinner size="sm" /></div>
               <p className="text-gray-500 text-sm">Querying knight...</p>
             </div>
           )}
 
           {error && (
-            <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-3">
-              <p className="text-red-400 text-sm">⚠️ {error}</p>
+            <ErrorBanner>
+              ⚠️ {error}
               <p className="text-red-400/60 text-xs mt-1">Knight may not have introspection enabled yet</p>
-            </div>
+            </ErrorBanner>
           )}
 
           {/* Configuration */}
@@ -317,30 +274,23 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
           )}
 
           {/* Skills Section */}
-          {skills.length > 0 && (
-            <div>
-              <button
-                onClick={() => setSkillsExpanded(!skillsExpanded)}
-                className="w-full flex items-center justify-between text-sm font-medium text-gray-400 mb-3 hover:text-roundtable-gold transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <FileCode className="w-4 h-4" />
-                  Knight Skills ({skills.length})
-                </div>
-                <ChevronDown className={`w-4 h-4 transition-transform ${skillsExpanded ? 'rotate-180' : ''}`} />
-              </button>
-              {skillsExpanded && (
-                <div className="grid grid-cols-2 gap-2">
-                  {skills.map((skill) => (
-                    <div key={skill} className="bg-roundtable-slate border border-roundtable-steel/50 rounded-lg px-3 py-2 text-xs text-gray-300 flex items-center gap-2">
-                      <span className="text-roundtable-gold">✓</span>
-                      <span className="capitalize">{skill.replace(/-/g, ' ')}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          <Collapsible
+            key={knight.name}
+            title={<><FileCode className="w-4 h-4" />Knight Skills ({skills.length})</>}
+          >
+            {skills.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2">
+                {skills.map((skill) => (
+                  <div key={skill} className="bg-roundtable-slate border border-roundtable-steel/50 rounded-lg px-3 py-2 text-xs text-gray-300 flex items-center gap-2">
+                    <span className="text-roundtable-gold">✓</span>
+                    <span className="capitalize">{skill.replace(/-/g, ' ')}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">No skills reported</p>
+            )}
+          </Collapsible>
 
           {/* Nix Packages */}
           {knightDetail?.nixPackages && knightDetail.nixPackages.length > 0 && (
@@ -468,7 +418,7 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
               <div className="bg-black/50 border border-roundtable-steel rounded-lg p-3">
                 {logsLoading ? (
                   <div className="text-center py-4">
-                    <div className="animate-spin w-5 h-5 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-2" />
+                    <div className="flex justify-center mb-2"><Spinner size="sm" /></div>
                     <p className="text-gray-500 text-xs">Loading logs...</p>
                   </div>
                 ) : (
@@ -500,7 +450,7 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
               </h3>
               {recentLoading && (
                 <div className="text-center py-4">
-                  <div className="animate-spin w-5 h-5 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-2" />
+                  <div className="flex justify-center mb-2"><Spinner size="sm" /></div>
                   <p className="text-gray-500 text-xs">Loading activity...</p>
                 </div>
               )}
@@ -524,8 +474,7 @@ export function KnightDetailDrawer({ knight, onClose }: Props) {
             </div>
           )}
         </div>
-      </div>
-    </>
+    </Drawer>
   )
 }
 
@@ -569,25 +518,6 @@ function ActivityEntry({ entry }: { entry: any }) {
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-function StatCard({ icon, label, value, detail, color }: {
-  icon: React.ReactNode
-  label: string
-  value: string | number
-  detail?: string
-  color?: string
-}) {
-  return (
-    <div className="bg-roundtable-slate rounded-lg p-3">
-      <div className="flex items-center gap-2 text-gray-400 mb-1">
-        {icon}
-        <span className="text-xs">{label}</span>
-      </div>
-      <p className={`text-lg font-bold ${color || 'text-white'}`}>{value}</p>
-      {detail && <p className="text-xs text-gray-500 mt-0.5">{detail}</p>}
     </div>
   )
 }

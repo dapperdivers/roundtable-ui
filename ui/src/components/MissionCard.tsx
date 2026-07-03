@@ -1,38 +1,17 @@
 import { useState, useEffect } from 'react'
-import { Target, Clock, Users, Link2, DollarSign, FileText, Brain, ChevronDown, ChevronUp, Loader2, CheckCircle, XCircle, Zap, Hash } from 'lucide-react'
+import { Target, Clock, Users, Link2, DollarSign, FileText, Brain, ChevronDown, ChevronUp, CheckCircle, XCircle, Zap, Hash } from 'lucide-react'
 import { apiGet } from '../lib/api'
 import type { Mission } from '../hooks/useMissions'
 import { MissionPhaseBadge } from './MissionPhaseBadge'
+import { PlanningResultViewer } from './PlanningResultViewer'
 import { getKnightConfig } from '../lib/knights'
+import { formatRelativeTime, formatDuration } from '../lib/format'
+import { phaseColor } from '../lib/status'
+import { Spinner } from './ui'
 
 interface MissionCardProps {
   mission: Mission
   onClick?: () => void
-}
-
-function formatRelativeTime(iso: string | null): string {
-  if (!iso) return '—'
-  const diff = Date.now() - new Date(iso).getTime()
-  const sec = Math.floor(diff / 1000)
-  if (sec < 60) return `${sec}s ago`
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  const days = Math.floor(hr / 24)
-  return `${days}d ago`
-}
-
-function formatDuration(start: string | null, end: string | null): string {
-  if (!start) return '—'
-  const s = new Date(start).getTime()
-  const e = end ? new Date(end).getTime() : Date.now()
-  const sec = Math.round((e - s) / 1000)
-  if (sec < 60) return `${sec}s`
-  if (sec < 3600) return `${Math.floor(sec / 60)}m`
-  const hours = Math.floor(sec / 3600)
-  const mins = Math.floor((sec % 3600) / 60)
-  return `${hours}h ${mins}m`
 }
 
 function MissionResults({ name }: { name: string }) {
@@ -57,18 +36,8 @@ function MissionResults({ name }: { name: string }) {
   )
 }
 
-// Chain phase colors (matching Chain page)
-const chainPhaseColors: Record<string, string> = {
-  Pending: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  Running: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  Succeeded: 'bg-green-500/20 text-green-400 border-green-500/30',
-  Failed: 'bg-red-500/20 text-red-400 border-red-500/30',
-  Paused: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-}
-
 export function MissionCard({ mission, onClick }: MissionCardProps) {
   const [showResults, setShowResults] = useState(false)
-  const [showPlanOutput, setShowPlanOutput] = useState(false)
   const [showKnights, setShowKnights] = useState(false)
   const [showChains, setShowChains] = useState(false)
   const [showCriteria, setShowCriteria] = useState(false)
@@ -111,7 +80,7 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
       {isPlanning && (
         <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
           <div className="flex items-center gap-2 text-xs text-amber-400">
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Spinner size="sm" />
             <span className="font-medium">Planner generating execution plan...</span>
           </div>
           <p className="text-xs text-gray-400 mt-1">
@@ -123,75 +92,7 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
       {/* Planning Results - show after planning completes */}
       {mission.planningResult && !isPlanning && (
         <div className="mb-3">
-          <div className="bg-roundtable-navy/50 border border-indigo-500/30 rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Brain className="w-4 h-4 text-indigo-400" />
-              <span className="text-xs font-medium text-indigo-400">Planning Complete</span>
-            </div>
-            
-            {/* Resource counts */}
-            <div className="grid grid-cols-3 gap-2 mb-2">
-              <div className="bg-roundtable-navy rounded p-2">
-                <div className="text-xs text-gray-500">Chains</div>
-                <div className="text-sm font-bold text-white">
-                  {mission.planningResult.chainsGenerated}
-                </div>
-              </div>
-              <div className="bg-roundtable-navy rounded p-2">
-                <div className="text-xs text-gray-500">Knights</div>
-                <div className="text-sm font-bold text-white">
-                  {mission.planningResult.knightsGenerated}
-                </div>
-              </div>
-              <div className="bg-roundtable-navy rounded p-2">
-                <div className="text-xs text-gray-500">Skills</div>
-                <div className="text-sm font-bold text-white">
-                  {mission.planningResult.skillsGenerated}
-                </div>
-              </div>
-            </div>
-
-            {/* Reasoning */}
-            {mission.planningResult.reasoning && (
-              <div className="bg-roundtable-navy rounded p-2 mb-2">
-                <div className="text-xs text-gray-400 mb-1">Planner Reasoning:</div>
-                <p className="text-xs text-gray-300">
-                  {mission.planningResult.reasoning}
-                </p>
-              </div>
-            )}
-
-            {/* Error */}
-            {mission.planningResult.error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded p-2 mb-2">
-                <div className="text-xs text-red-400">
-                  Planning Error: {mission.planningResult.error}
-                </div>
-              </div>
-            )}
-
-            {/* View Plan Output */}
-            {mission.planningResult.rawOutput && (
-              <div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowPlanOutput(!showPlanOutput) }}
-                  className="flex items-center gap-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
-                  {showPlanOutput ? (
-                    <ChevronUp className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                  {showPlanOutput ? 'Hide' : 'View'} Generated Plan (JSON)
-                </button>
-                {showPlanOutput && (
-                  <pre className="mt-2 text-xs text-gray-300 whitespace-pre-wrap max-h-64 overflow-auto bg-roundtable-navy rounded p-2 border border-indigo-500/30">
-                    {JSON.stringify(JSON.parse(mission.planningResult.rawOutput), null, 2)}
-                  </pre>
-                )}
-              </div>
-            )}
-          </div>
+          <PlanningResultViewer result={mission.planningResult} />
         </div>
       )}
 
@@ -328,7 +229,7 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
                       <div className="text-xs text-gray-500 font-mono">{chain.chainCRName}</div>
                     </div>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded border ${chainPhaseColors[chain.phase] || chainPhaseColors.Pending}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded border ${phaseColor(chain.phase)}`}>
                     {chain.phase}
                   </span>
                 </div>

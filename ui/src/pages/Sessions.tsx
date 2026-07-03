@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { TreePine, ChevronRight, ChevronDown, Wrench, MessageSquare, Brain, RefreshCw, Search, BarChart3, Loader2 } from 'lucide-react'
+import { TreePine, ChevronRight, ChevronDown, Wrench, MessageSquare, Search, BarChart3 } from 'lucide-react'
 import { getKnightConfig, buildKnightConfigFromFleet } from '../lib/knights'
 import { useFleet } from '../hooks/useFleet'
 import { fetchWithTimeout } from '../hooks/useKnightSession'
 import type { SessionEntry, SessionTreeNode, KnightSessionStats } from '../hooks/useKnightSession'
+import { Spinner, ErrorBanner, EmptyState, PageHeader, RefreshButton, StatCard, ProgressBar } from '../components/ui'
+import { formatCost } from '../lib/format'
 
 const entryTypeIcons: Record<string, string> = {
   user: '📨',
@@ -21,10 +23,6 @@ const entryTypeColors: Record<string, string> = {
   tool_result: 'border-amber-500/30 bg-amber-500/5',
   thinking: 'border-gray-500/30 bg-gray-500/5',
   compaction: 'border-red-500/30 bg-red-500/5',
-}
-
-function formatCost(cost: number): string {
-  return cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`
 }
 
 function TreeNodeView({ node, depth = 0 }: { node: SessionTreeNode & { children?: SessionTreeNode[] }; depth?: number }) {
@@ -255,36 +253,22 @@ export function SessionsPage() {
   if (fleetLoading) {
     return (
       <div className="text-center py-12">
-        <Loader2 className="w-8 h-8 text-roundtable-gold animate-spin mx-auto mb-4" />
+        <div className="flex justify-center mb-4"><Spinner /></div>
         <p className="text-gray-400">Loading fleet data...</p>
       </div>
     )
   }
 
   if (knights.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <TreePine className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-        <p className="text-gray-400">No knights available in the fleet</p>
-      </div>
-    )
+    return <EmptyState icon={TreePine} title="No knights available in the fleet" />
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-          <TreePine className="w-8 h-8 text-roundtable-gold" />
-          Session Explorer
-          <span className="text-sm text-gray-500 font-normal">({knights.length} knights)</span>
-        </h1>
-        <button onClick={fetchData}
-          disabled={!selectedKnight}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
+      <PageHeader icon={TreePine} title="Session Explorer">
+        <span className="text-sm text-gray-500 font-normal">({knights.length} knights)</span>
+        <RefreshButton onClick={fetchData} loading={loading} />
+      </PageHeader>
 
       {/* Knight picker with search + view tabs */}
       <div className="flex items-center gap-4 mb-6">
@@ -361,22 +345,10 @@ export function SessionsPage() {
       )}
       {stats?.session && stats.supported !== false && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-          <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
-            <p className="text-xs text-gray-500">Messages</p>
-            <p className="text-lg font-bold text-white">{stats.session.totalMessages}</p>
-          </div>
-          <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
-            <p className="text-xs text-gray-500">Tool Calls</p>
-            <p className="text-lg font-bold text-purple-400">{stats.session.toolCalls}</p>
-          </div>
-          <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
-            <p className="text-xs text-gray-500">Tokens</p>
-            <p className="text-lg font-bold text-white">{stats.session.tokens.total.toLocaleString()}</p>
-          </div>
-          <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
-            <p className="text-xs text-gray-500">Cost</p>
-            <p className="text-lg font-bold text-roundtable-gold">{formatCost(stats.session.cost)}</p>
-          </div>
+          <StatCard label="Messages" value={stats.session.totalMessages} />
+          <StatCard label="Tool Calls" value={stats.session.toolCalls} color="text-purple-400" />
+          <StatCard label="Tokens" value={stats.session.tokens.total.toLocaleString()} />
+          <StatCard label="Cost" value={formatCost(stats.session.cost)} color="text-roundtable-gold" />
           <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3 flex items-center justify-center">
             <button onClick={fetchFleetPerf}
               className="text-xs text-gray-400 hover:text-roundtable-gold flex items-center gap-1">
@@ -401,9 +373,8 @@ export function SessionsPage() {
                 return (
                   <div key={name} className="flex items-center gap-3">
                     <span className="w-24 text-xs text-gray-300 truncate">{cfg.emoji} {name}</span>
-                    <div className="flex-1 h-5 bg-roundtable-navy rounded-full overflow-hidden relative">
-                      <div className="h-full bg-roundtable-gold/30 rounded-full transition-all"
-                        style={{ width: `${barWidth}%` }} />
+                    <div className="flex-1 relative">
+                      <ProgressBar percent={barWidth} fillClass="bg-roundtable-gold/30" heightClass="h-5" />
                       <span className="absolute right-2 top-0.5 text-[10px] text-gray-400">
                         {formatCost(s.session?.cost || 0)} · {s.session?.toolCalls || 0} tools · {(s.session?.tokens.total || 0).toLocaleString()} tokens
                       </span>
@@ -416,14 +387,14 @@ export function SessionsPage() {
       )}
 
       {error && (
-        <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-4">
-          <p className="text-red-400 text-sm">⚠️ {error}</p>
+        <div className="mb-4">
+          <ErrorBanner>⚠️ {error}</ErrorBanner>
         </div>
       )}
 
       {loading && (
         <div className="text-center py-12">
-          <div className="animate-spin w-8 h-8 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-4" />
+          <div className="flex justify-center mb-4"><Spinner /></div>
           <p className="text-gray-400">Querying {config?.emoji} {selectedKnight}...</p>
         </div>
       )}
@@ -446,14 +417,12 @@ export function SessionsPage() {
       {view === 'tree' && !loading && (
         <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
           {tree.length === 0 ? (
-            <div className="text-center py-12">
-              <TreePine className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-              {stats?.supported === false ? (
-                <p className="text-gray-500">Session introspection not available for this knight.</p>
-              ) : (
-                <p className="text-gray-500">No session tree data. Dispatch a task to see activity.</p>
-              )}
-            </div>
+            <EmptyState
+              icon={TreePine}
+              title={stats?.supported === false
+                ? 'Session introspection not available for this knight.'
+                : 'No session tree data. Dispatch a task to see activity.'}
+            />
           ) : (
             <div className="max-h-[70vh] overflow-auto">
               {tree.map(node => (
@@ -468,16 +437,14 @@ export function SessionsPage() {
       {view !== 'tree' && !loading && (
         <div className="space-y-2">
           {filteredEntries.length === 0 && (
-            <div className="text-center py-12">
-              <MessageSquare className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-              {stats?.supported === false ? (
-                <p className="text-gray-500">Session introspection not available for this knight.</p>
-              ) : searchQuery || filterType ? (
-                <p className="text-gray-500">No entries match your filters.</p>
-              ) : (
-                <p className="text-gray-500">No session entries found. Dispatch a task to see activity.</p>
-              )}
-            </div>
+            <EmptyState
+              icon={MessageSquare}
+              title={stats?.supported === false
+                ? 'Session introspection not available for this knight.'
+                : searchQuery || filterType
+                  ? 'No entries match your filters.'
+                  : 'No session entries found. Dispatch a task to see activity.'}
+            />
           )}
           {filteredEntries.map(entry => (
             <ToolCallCard key={entry.id} entry={entry} />

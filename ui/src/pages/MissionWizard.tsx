@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Target, Plus, X, ArrowLeft, Rocket, Brain, Settings } from 'lucide-react'
 import { apiPost } from '../lib/api'
+import { Modal, ErrorBanner } from '../components/ui'
 
 interface MissionForm {
   name: string
@@ -141,19 +142,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
   ]
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-roundtable-steel">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Target className="w-5 h-5 text-roundtable-gold" />
-            Create Mission
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <Modal onClose={onClose} title="Create Mission" icon={<Target className="w-5 h-5 text-roundtable-gold" />}>
         {/* Step indicators */}
         <div className="flex items-center gap-2 px-6 pt-4">
           {steps.map((s, i) => (
@@ -494,11 +483,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
                 )}
               </div>
 
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                  <p className="text-red-400 text-sm">{error}</p>
-                </div>
-              )}
+              {error && <ErrorBanner>{error}</ErrorBanner>}
             </div>
           )}
         </div>
@@ -532,7 +517,6 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
             </button>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

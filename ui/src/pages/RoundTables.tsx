@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Crown, RefreshCw, Shield, DollarSign, ChevronDown, Layers, Settings, CheckSquare } from 'lucide-react'
+import { Crown, Shield, DollarSign, ChevronDown, Layers, Settings, CheckSquare } from 'lucide-react'
 import { usePolledFetch } from '../hooks/usePolledFetch'
 import type { RoundTable } from '../lib/types'
+import { PageHeader, RefreshButton, ErrorBanner, Spinner, EmptyState, PhaseBadge, ProgressBar } from '../components/ui'
 
 export function RoundTablesPage() {
   const { data: roundTables, loading, error, refresh } = usePolledFetch<RoundTable[]>('/api/roundtables', 15000, [])
@@ -16,57 +17,29 @@ export function RoundTablesPage() {
     })
   }
 
-  const phaseBadge = (phase: string) => {
-    const colors: Record<string, string> = {
-      Ready: 'bg-green-500/10 text-green-400 border-green-500/20',
-      Active: 'bg-green-500/10 text-green-400 border-green-500/20',
-      Degraded: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-      Suspended: 'bg-red-500/10 text-red-400 border-red-500/20',
-      OverBudget: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-      Provisioning: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-      Error: 'bg-red-500/10 text-red-400 border-red-500/20',
-    }
-    return (
-      <span className={`text-xs px-2 py-0.5 rounded-full border ${colors[phase] || 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
-        {phase || 'Unknown'}
-      </span>
-    )
-  }
-
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-          <Crown className="w-8 h-8 text-roundtable-gold" />
-          Round Tables
-        </h1>
-        <button
-          onClick={refresh}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
+      <PageHeader icon={Crown} title="Round Tables">
+        <RefreshButton onClick={refresh} loading={loading} />
+      </PageHeader>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
-          <p className="text-red-400 text-sm">Failed to load round tables: {error}</p>
+        <div className="mb-6">
+          <ErrorBanner>Failed to load round tables: {error}</ErrorBanner>
         </div>
       )}
 
       {loading && roundTables.length === 0 && (
         <div className="text-center py-12">
-          <div className="animate-spin w-8 h-8 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-3" />
+          <div className="flex justify-center mb-3">
+            <Spinner />
+          </div>
           <p className="text-gray-500 text-sm">Loading round tables...</p>
         </div>
       )}
 
       {!loading && roundTables.length === 0 && (
-        <div className="text-center py-12">
-          <Crown className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-          <p className="text-gray-500">No round tables found.</p>
-        </div>
+        <EmptyState icon={Crown} title="No round tables found." />
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -82,10 +55,8 @@ export function RoundTablesPage() {
                     <p className="text-xs text-gray-500">{rt.namespace}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
-                    {rt.suspended && (
-                      <span className="text-xs px-2 py-0.5 rounded-full border bg-red-500/10 text-red-400 border-red-500/20">Suspended</span>
-                    )}
-                    {phaseBadge(rt.phase)}
+                    {rt.suspended && <PhaseBadge phase="Suspended" />}
+                    <PhaseBadge phase={rt.phase || 'Unknown'} />
                   </div>
                 </div>
 
@@ -103,12 +74,10 @@ export function RoundTablesPage() {
                   </div>
 
                   {/* Knight readiness bar */}
-                  <div className="w-full bg-roundtable-navy rounded-full h-2">
-                    <div
-                      className="bg-green-500 h-2 rounded-full transition-all"
-                      style={{ width: rt.knightsTotal > 0 ? `${(rt.knightsReady / rt.knightsTotal) * 100}%` : '0%' }}
-                    />
-                  </div>
+                  <ProgressBar
+                    percent={rt.knightsTotal > 0 ? (rt.knightsReady / rt.knightsTotal) * 100 : 0}
+                    fillClass="bg-green-500"
+                  />
 
                   {/* NATS */}
                   {rt.natsPrefix && (

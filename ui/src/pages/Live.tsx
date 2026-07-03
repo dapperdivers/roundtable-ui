@@ -7,6 +7,8 @@ import { getKnightConfig, KNIGHT_CONFIG, knightNameForDomain } from '../lib/knig
 import { parseEvent, parseEventData } from '../lib/events'
 import { FleetGraph } from '../components/FleetGraph'
 import { KnightDetailDrawer } from '../components/KnightDetailDrawer'
+import { PageHeader, StatCard, EmptyState } from '../components/ui'
+import { formatCost } from '../lib/format'
 
 export function LivePage() {
   const { events, connected } = useWebSocket()
@@ -68,20 +70,14 @@ export function LivePage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-          <GitGraph className="w-8 h-8 text-roundtable-gold" />
-          Message Flow
-        </h1>
-        <div className="flex items-center gap-2">
-          {connected ? (
-            <><Wifi className="w-4 h-4 text-green-400" /><span className="text-green-400 text-sm">Connected</span></>
-          ) : (
-            <><WifiOff className="w-4 h-4 text-red-400" /><span className="text-red-400 text-sm">Disconnected</span></>
-          )}
-          <span className="text-gray-500 text-sm ml-2">({filteredEvents.length} events)</span>
-        </div>
-      </div>
+      <PageHeader icon={GitGraph} title="Message Flow">
+        {connected ? (
+          <><Wifi className="w-4 h-4 text-green-400" /><span className="text-green-400 text-sm">Connected</span></>
+        ) : (
+          <><WifiOff className="w-4 h-4 text-red-400" /><span className="text-red-400 text-sm">Disconnected</span></>
+        )}
+        <span className="text-gray-500 text-sm">({filteredEvents.length} events)</span>
+      </PageHeader>
 
       {/* Compact filter toolbar */}
       <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-3 mb-4">
@@ -164,22 +160,10 @@ export function LivePage() {
             return sum + (typeof d.cost === 'number' ? d.cost : 0)
           }, 0)
           return (<>
-            <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
-              <p className="text-xs text-gray-500">Tasks</p>
-              <p className="text-lg font-bold text-blue-400">{tasks}</p>
-            </div>
-            <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
-              <p className="text-xs text-gray-500">Results</p>
-              <p className="text-lg font-bold text-green-400">{results}</p>
-            </div>
-            <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
-              <p className="text-xs text-gray-500">Failures</p>
-              <p className="text-lg font-bold text-red-400">{failures}</p>
-            </div>
-            <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3">
-              <p className="text-xs text-gray-500">Cost</p>
-              <p className="text-lg font-bold text-roundtable-gold">${totalCost.toFixed(2)}</p>
-            </div>
+            <StatCard label="Tasks" value={tasks} color="text-blue-400" />
+            <StatCard label="Results" value={results} color="text-green-400" />
+            <StatCard label="Failures" value={failures} color="text-red-400" />
+            <StatCard label="Cost" value={formatCost(totalCost)} color="text-roundtable-gold" />
           </>)
         })()}
       </div>
@@ -188,7 +172,7 @@ export function LivePage() {
       <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
         <h3 className="text-sm font-medium text-gray-400 mb-3">Recent Messages</h3>
         {recentEvents.length === 0 ? (
-          <p className="text-sm text-gray-600 text-center py-4">Waiting for messages…</p>
+          <EmptyState title="Waiting for messages…" />
         ) : (
           <div className="space-y-2">
             {recentEvents.map((event, i) => (
@@ -239,7 +223,7 @@ function EventCard({ event, index, expanded, onToggle }: {
           </span>
         )}
         {!isTask && cost !== undefined && (
-          <span className="text-gray-500">${cost.toFixed(4)}</span>
+          <span className="text-gray-500">{formatCost(cost)}</span>
         )}
         {!isTask && durationMs !== undefined && (
           <span className="text-gray-500">{(durationMs / 1000).toFixed(1)}s</span>

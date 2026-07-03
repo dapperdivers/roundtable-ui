@@ -1,6 +1,8 @@
 import { Shield, Wifi, WifiOff, RotateCw, Cpu, CheckCircle, XCircle, DollarSign } from 'lucide-react'
 import type { Knight } from '../hooks/useFleet'
 import { getKnightConfig } from '../lib/knights'
+import { formatRelativeTime } from '../lib/format'
+import { phaseColor, KNIGHT_STATUS_DOT } from '../lib/status'
 
 interface KnightActivity {
   recent: number
@@ -15,16 +17,6 @@ interface KnightCardProps {
   activity?: KnightActivity
 }
 
-function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const sec = Math.floor(diff / 1000)
-  if (sec < 60) return `${sec}s ago`
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min}m ago`
-  const hr = Math.floor(min / 60)
-  return `${hr}h ago`
-}
-
 function MiniSparkline({ bars, active }: { bars: number[]; active: boolean }) {
   return (
     <div className="flex items-end gap-0.5 h-4">
@@ -37,21 +29,6 @@ function MiniSparkline({ bars, active }: { bars: number[]; active: boolean }) {
       ))}
     </div>
   )
-}
-
-const statusColors = {
-  online: 'bg-green-500',
-  offline: 'bg-red-500',
-  starting: 'bg-yellow-500',
-  busy: 'bg-blue-500',
-}
-
-const phaseColors = {
-  Ready: 'bg-green-500/20 text-green-400 border-green-500/30',
-  Degraded: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  Suspended: 'bg-red-500/20 text-red-400 border-red-500/30',
-  Provisioning: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  Pending: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
 }
 
 function extractModelShortName(model?: string): string | null {
@@ -110,11 +87,11 @@ export function KnightCard({ knight, onClick, activity }: KnightCardProps) {
         </div>
         <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${statusColors[knight.status]} animate-pulse`} />
+            <span className={`w-2.5 h-2.5 rounded-full ${KNIGHT_STATUS_DOT[knight.status]} animate-pulse`} />
             <span className="text-xs text-gray-400 capitalize">{knight.status}</span>
           </div>
           {knight.phase && (
-            <span className={`text-xs px-2 py-0.5 rounded border ${phaseColors[knight.phase as keyof typeof phaseColors] || phaseColors.Pending}`}>
+            <span className={`text-xs px-2 py-0.5 rounded border ${phaseColor(knight.phase)}`}>
               {knight.phase}
             </span>
           )}
