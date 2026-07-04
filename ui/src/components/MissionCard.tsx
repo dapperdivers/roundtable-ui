@@ -37,6 +37,10 @@ function MissionResults({ name }: { name: string }) {
 }
 
 export function MissionCard({ mission, onClick }: MissionCardProps) {
+  // Meta-missions start with no knights/chains — the API serializes those
+  // nil slices as null
+  const knights = mission.knights ?? []
+  const chains = mission.chains ?? []
   const [showResults, setShowResults] = useState(false)
   const [showKnights, setShowKnights] = useState(false)
   const [showChains, setShowChains] = useState(false)
@@ -104,7 +108,7 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
             <span className="text-xs text-gray-400">Knights</span>
           </div>
           <div className="flex gap-1">
-            {mission.knights.slice(0, 3).map((knight) => {
+            {knights.slice(0, 3).map((knight) => {
               const config = getKnightConfig(knight)
               return (
                 <span key={knight} className="text-sm" title={knight}>
@@ -112,8 +116,8 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
                 </span>
               )
             })}
-            {mission.knights.length > 3 && (
-              <span className="text-xs text-gray-500">+{mission.knights.length - 3}</span>
+            {knights.length > 3 && (
+              <span className="text-xs text-gray-500">+{knights.length - 3}</span>
             )}
           </div>
         </div>
@@ -124,7 +128,7 @@ export function MissionCard({ mission, onClick }: MissionCardProps) {
             <Link2 className="w-3 h-3 text-gray-400" />
             <span className="text-xs text-gray-400">Chains</span>
           </div>
-          <span className="text-sm text-white font-mono">{mission.chains.length}</span>
+          <span className="text-sm text-white font-mono">{chains.length}</span>
         </div>
       </div>
 

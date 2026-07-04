@@ -30,8 +30,9 @@ export interface Mission {
   objective: string
   startedAt: string | null
   expiresAt: string | null
-  knights: string[]
-  chains: string[]
+  /** null until the planner/operator assigns knights (meta-missions start empty) */
+  knights: string[] | null
+  chains: string[] | null
   costBudgetUSD: string
   totalCost: string
   ttl: number

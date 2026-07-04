@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // validKnightName matches alphanumeric knight names (prevents NATS injection)
@@ -261,11 +262,22 @@ func main() {
 	}
 	slog.Info("NATS connected", "url", natsURL)
 
-	// Connect to Kubernetes (in-cluster)
+	// Connect to Kubernetes (in-cluster, falling back to kubeconfig for local dev)
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		slog.Warn("K8s in-cluster config failed (running outside cluster?)", "error", err)
-	} else {
+		if cfg, kerr := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+			clientcmd.NewDefaultClientConfigLoadingRules(),
+			&clientcmd.ConfigOverrides{},
+		).ClientConfig(); kerr != nil {
+			slog.Warn("Kubeconfig fallback failed", "error", kerr)
+		} else {
+			config = cfg
+			err = nil
+			slog.Info("Using kubeconfig (local dev)")
+		}
+	}
+	if err == nil {
 		// Assign globals only on success — a typed-nil client would defeat the
 		// k8sClient != nil availability checks in handlers
 		if cs, csErr := kubernetes.NewForConfig(config); csErr != nil {
