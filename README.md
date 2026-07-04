@@ -250,17 +250,25 @@ The dashboard API server is configured via environment variables:
 
 ### Authentication
 
-API key authentication is optional:
+The web UI never handles credentials — authentication is expected to happen
+upstream (e.g. Authentik/Traefik forward auth at the ingress). The API's
+bearer check remains for direct (non-browser) access. Two supported modes:
+
+1. **Open mode** — leave `DASHBOARD_API_KEY` unset. No auth anywhere;
+   suitable for local dev and trusted networks.
+2. **Forward auth** — set `DASHBOARD_API_KEY` on the API and have the
+   ingress/proxy inject `Authorization: Bearer <key>` into proxied requests
+   (including WebSocket upgrades). Direct API calls without the header get
+   401; scripts can pass the header themselves, and WebSocket clients may
+   use the `?api_key=` query parameter.
+
+> ⚠️ If `DASHBOARD_API_KEY` is set but no proxy injects the header, the UI
+> will show 401 errors everywhere — there is no in-browser login.
 
 ```bash
-# Enable authentication
+# Enable bearer enforcement on the API
 export DASHBOARD_API_KEY=your-secret-key-here
-
-# Frontend will prompt for API key on first access
-# Key is stored in localStorage as 'roundtable_api_key'
 ```
-
-When `DASHBOARD_API_KEY` is not set, the dashboard operates in open mode (suitable for internal/dev deployments).
 
 ### CORS Configuration
 

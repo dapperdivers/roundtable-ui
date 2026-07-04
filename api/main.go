@@ -1220,18 +1220,29 @@ type ChainSummary struct {
 	CompletionTime *string       `json:"completionTime"`
 	Steps          []StepSummary `json:"steps"`
 	Schedule       string        `json:"schedule,omitempty"`
+	Description    string        `json:"description,omitempty"`
+	Timeout        int           `json:"timeout,omitempty"`
+	OutputKnight   string        `json:"outputKnight,omitempty"`
+	RoundTableRef  string        `json:"roundTableRef,omitempty"`
+	MissionRef     string        `json:"missionRef,omitempty"`
+	Suspended      bool          `json:"suspended,omitempty"`
+	RunsCompleted  int           `json:"runsCompleted,omitempty"`
+	RunsFailed     int           `json:"runsFailed,omitempty"`
 }
 
 type StepSummary struct {
-	Name           string   `json:"name"`
-	Knight         string   `json:"knight"`
-	Domain         string   `json:"domain"`
-	Phase          string   `json:"phase"`
-	StartTime      *string  `json:"startTime"`
-	CompletionTime *string  `json:"completionTime"`
-	Result         *string  `json:"result"`
-	DependsOn      []string `json:"dependsOn"`
-	RetryCount     int      `json:"retryCount"`
+	Name              string   `json:"name"`
+	Knight            string   `json:"knight"`
+	Domain            string   `json:"domain"`
+	Phase             string   `json:"phase"`
+	StartTime         *string  `json:"startTime"`
+	CompletionTime    *string  `json:"completionTime"`
+	Result            *string  `json:"result"`
+	DependsOn         []string `json:"dependsOn"`
+	RetryCount        int      `json:"retryCount"`
+	ContinueOnFailure bool     `json:"continueOnFailure,omitempty"`
+	OutputPath        string   `json:"outputPath,omitempty"`
+	MaxRetries        int      `json:"maxRetries,omitempty"`
 }
 
 func chainsHandler(namespace string) http.HandlerFunc {
@@ -1299,6 +1310,18 @@ func parseChainResource(obj map[string]interface{}, knightDomains map[string]str
 
 	// Schedule from spec (plain cron string in CRD)
 	chain.Schedule = getStr(spec, "schedule")
+
+	// Spec metadata the Chains page renders (description, refs, suspension…)
+	chain.Description = getStr(spec, "description")
+	chain.Timeout = getInt(spec, "timeout")
+	chain.OutputKnight = getStr(spec, "outputKnight")
+	chain.RoundTableRef = getStr(spec, "roundTableRef")
+	chain.MissionRef = getStr(spec, "missionRef")
+	chain.Suspended = getBool(spec, "suspended")
+
+	// Scheduled-run counters from status
+	chain.RunsCompleted = getInt(status, "runsCompleted")
+	chain.RunsFailed = getInt(status, "runsFailed")
 
 	// Timing (CRD fields: startedAt, completedAt)
 	if t := getStr(status, "startedAt"); t != "" {
@@ -1373,6 +1396,9 @@ func parseChainResource(obj map[string]interface{}, knightDomains map[string]str
 					}
 				}
 			}
+			step.ContinueOnFailure = getBool(ss, "continueOnFailure")
+			step.OutputPath = getStr(ss, "outputPath")
+			step.MaxRetries = getInt(getNestedMap(ss, "retry"), "maxAttempts")
 		}
 
 		chain.Steps = append(chain.Steps, step)
@@ -1391,10 +1417,13 @@ func parseChainResource(obj map[string]interface{}, knightDomains map[string]str
 				domain = knightDomains[knightName]
 			}
 			step := StepSummary{
-				Name:   getStr(sm, "name"),
-				Knight: knightName,
-				Domain: domain,
-				Phase:  "Pending",
+				Name:              getStr(sm, "name"),
+				Knight:            knightName,
+				Domain:            domain,
+				Phase:             "Pending",
+				ContinueOnFailure: getBool(sm, "continueOnFailure"),
+				OutputPath:        getStr(sm, "outputPath"),
+				MaxRetries:        getInt(getNestedMap(sm, "retry"), "maxAttempts"),
 			}
 			if deps := getSlice(sm, "dependsOn"); deps != nil {
 				for _, d := range deps {
@@ -1551,6 +1580,18 @@ func missionCreateHandler(namespace string) http.HandlerFunc {
 		if policy, ok := reqBody["cleanupPolicy"].(string); ok {
 			if policy != "Delete" && policy != "Retain" {
 				http.Error(w, "cleanupPolicy must be Delete or Retain", http.StatusBadRequest)
+				return
+			}
+		}
+
+		// The Mission CRD requires planner.knightRef for meta-missions —
+		// reject here so clients get a clean 400 instead of an opaque
+		// CRD-validation error at create time
+		if meta, _ := reqBody["metaMission"].(bool); meta {
+			planner, _ := reqBody["planner"].(map[string]interface{})
+			knightRef, _ := planner["knightRef"].(string)
+			if !validK8sName.MatchString(knightRef) {
+				http.Error(w, "Meta-missions require planner.knightRef (a valid knight name)", http.StatusBadRequest)
 				return
 			}
 		}

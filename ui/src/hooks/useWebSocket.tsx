@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext, type ReactNode } from 'react'
-import { getApiKey, authFetch } from '../lib/auth'
+import { apiGet } from '../lib/api'
 
 export interface NatsEvent {
   type: 'task' | 'result' | 'mission' | 'chain'
@@ -49,9 +49,7 @@ function useWebSocketConnection() {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const apiKey = getApiKey()
-    const wsUrl = `${protocol}//${window.location.host}/api/ws${apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : ''}`
-    const ws = new WebSocket(wsUrl)
+    const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`)
 
     ws.onopen = () => {
       if (!mountedRef.current) return
@@ -104,8 +102,7 @@ function useWebSocketConnection() {
     mountedRef.current = true
 
     // Load historical events so there's always something to show
-    authFetch('/api/tasks')
-      .then((r) => r.json())
+    apiGet<{ results?: Array<{ type?: string; subject?: string; data?: unknown; timestamp?: string }> }>('/api/tasks')
       .then((data) => {
         if (!mountedRef.current) return
         const historical: NatsEvent[] = (data.results || [])
@@ -144,18 +141,12 @@ function useWebSocketConnection() {
     }
   }, [connect])
 
-  const dispatch = useCallback((knight: string, domain: string, task: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ action: 'dispatch', knight, domain, task }))
-    }
-  }, [])
-
   const clearEvents = useCallback(() => {
     setEvents([])
     seenEvents.current.clear()
   }, [])
 
-  return { events, connected, error, dispatch, clearEvents }
+  return { events, connected, error, clearEvents }
 }
 
 type WebSocketState = ReturnType<typeof useWebSocketConnection>

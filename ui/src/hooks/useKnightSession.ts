@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { authFetch } from '../lib/auth'
+import { apiFetch } from '../lib/api'
 
 // Matches pi-knight's introspect stats response (src/introspect.ts buildStats)
 export interface KnightSessionStats {
@@ -55,7 +55,7 @@ export async function fetchWithTimeout(url: string, timeoutMs = SESSION_TIMEOUT_
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   
   try {
-    const res = await authFetch(url, { signal: controller.signal })
+    const res = await apiFetch(url, { signal: controller.signal })
     clearTimeout(timeout)
     return res
   } catch (e) {

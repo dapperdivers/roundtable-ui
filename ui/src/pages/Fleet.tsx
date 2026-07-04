@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { RefreshCw, Zap, Crown, DollarSign, TrendingUp } from 'lucide-react'
+import { Zap, Crown, DollarSign, TrendingUp } from 'lucide-react'
 import { useFleet } from '../hooks/useFleet'
 import type { Knight } from '../hooks/useFleet'
 import { KnightCard } from '../components/KnightCard'
@@ -7,6 +7,8 @@ import { KnightDetailDrawer } from '../components/KnightDetailDrawer'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { getKnightConfig } from '../lib/knights'
 import { parseEvent, resultFailureReason } from '../lib/events'
+import { PageHeader, RefreshButton, StatCard, ErrorBanner, Spinner } from '../components/ui'
+import { formatCost, formatTimestamp } from '../lib/format'
 
 export function FleetPage() {
   const { knights, loading, error, refresh } = useFleet()
@@ -108,57 +110,46 @@ export function FleetPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <Crown className="w-8 h-8 text-roundtable-gold" />
-            The Round Table
-          </h1>
-          <p className="text-gray-400 mt-1">
-            {online}/{total} knights seated • observing the realm
-          </p>
-        </div>
-        <button
-          onClick={refresh}
-          className="flex items-center gap-2 px-4 py-2 bg-roundtable-steel hover:bg-roundtable-gold/20 border border-roundtable-steel hover:border-roundtable-gold/30 rounded-lg transition-colors text-gray-300"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        icon={Crown}
+        title="The Round Table"
+        subtitle={`${online}/${total} knights seated • observing the realm`}
+      >
+        <RefreshButton onClick={refresh} loading={loading} />
+      </PageHeader>
 
       {/* Summary bar */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-4 mb-8">
-        <SummaryCard
+        <StatCard
           label="Online"
           value={online}
           total={total}
           color="text-green-400"
           icon={<Zap className="w-5 h-5" />}
         />
-        <SummaryCard
+        <StatCard
           label="Offline"
           value={knights.filter((k) => k.status === 'offline').length}
           total={total}
           color="text-red-400"
         />
-        <SummaryCard
+        <StatCard
           label="Restarts"
           value={knights.reduce((sum, k) => sum + k.restarts, 0)}
           color="text-yellow-400"
         />
-        <SummaryCard
+        <StatCard
           label="Domains"
           value={new Set(knights.map((k) => k.domain)).size}
           color="text-blue-400"
         />
-        <SummaryCard
+        <StatCard
           label="Session Cost"
-          value={costStats.totalCost > 0 ? `$${costStats.totalCost.toFixed(2)}` : '$0.00'}
+          value={costStats.totalCost > 0 ? formatCost(costStats.totalCost) : '$0.00'}
           color="text-roundtable-gold"
           icon={<DollarSign className="w-5 h-5" />}
         />
-        <SummaryCard
+        <StatCard
           label="Tasks"
           value={costStats.taskCount}
           color="text-purple-400"
@@ -168,16 +159,20 @@ export function FleetPage() {
 
       {/* Error state */}
       {error && (
-        <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-6">
-          <p className="text-red-400">⚠️ {error}</p>
-          <p className="text-red-400/60 text-sm mt-1">API may not be running. Start with: cd api && go run .</p>
+        <div className="mb-6">
+          <ErrorBanner>
+            <p>⚠️ {error}</p>
+            <p className="text-red-400/60 text-sm mt-1">API may not be running. Start with: cd api && go run .</p>
+          </ErrorBanner>
         </div>
       )}
 
       {/* Loading state */}
       {loading && (
         <div className="text-center py-20">
-          <div className="animate-spin w-8 h-8 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-4" />
+          <div className="flex justify-center mb-4">
+            <Spinner />
+          </div>
           <p className="text-gray-400">Summoning knights to the table...</p>
         </div>
       )}
@@ -202,7 +197,7 @@ export function FleetPage() {
                     <span>{cfg?.emoji || '🤖'}</span>
                     <span className="text-gray-300 capitalize">{knight || 'unknown'}</span>
                     <span className="text-red-400 truncate flex-1">{resultFailureReason(data) || 'Task failed'}</span>
-                    <span className="text-gray-600 flex-shrink-0">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                    <span className="text-gray-600 flex-shrink-0">{formatTimestamp(e.timestamp)}</span>
                   </div>
                 )
               })}
@@ -224,33 +219,6 @@ export function FleetPage() {
 
       {/* Knight detail drawer */}
       <KnightDetailDrawer knight={selectedKnight} onClose={() => setSelectedKnight(null)} />
-    </div>
-  )
-}
-
-function SummaryCard({
-  label,
-  value,
-  total,
-  color,
-  icon,
-}: {
-  label: string
-  value: number | string
-  total?: number
-  color: string
-  icon?: React.ReactNode
-}) {
-  return (
-    <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-gray-400 text-sm">{label}</p>
-        {icon && <span className={color}>{icon}</span>}
-      </div>
-      <p className={`text-2xl font-bold mt-1 ${color}`}>
-        {value}
-        {total !== undefined && <span className="text-gray-500 text-lg">/{total}</span>}
-      </p>
     </div>
   )
 }

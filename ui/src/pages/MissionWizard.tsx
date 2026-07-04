@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Target, Plus, X, ArrowLeft, Rocket, Brain, Settings } from 'lucide-react'
-import { authFetch } from '../lib/auth'
+import { apiPost } from '../lib/api'
+import { Modal, ErrorBanner } from '../components/ui'
 
 interface MissionForm {
   name: string
@@ -87,6 +88,12 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
   }
 
   const handleSubmit = async () => {
+    // The Mission CRD requires planner.knightRef for meta-missions
+    if (form.metaMission && !form.planner.knightRef.trim()) {
+      setError('Meta-missions require a planner knight (Advanced step)')
+      setStep(2)
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
@@ -109,7 +116,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
       // Add planner config if metaMission is enabled
       if (form.metaMission) {
         body.planner = {
-          knightRef: form.planner.knightRef || undefined,
+          knightRef: form.planner.knightRef.trim(),
           timeout: form.planner.timeout,
           context: form.planner.context || undefined,
           allowSkillGeneration: form.planner.allowSkillGeneration,
@@ -118,14 +125,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
         }
       }
 
-      const res = await authFetch('/api/missions', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) {
-        const data = await res.text()
-        throw new Error(data)
-      }
+      await apiPost('/api/missions', body)
       onCreated()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create mission')
@@ -137,24 +137,12 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
   const steps = [
     { title: 'Basics', valid: form.name.trim() && form.objective.trim() },
     { title: 'Knights', valid: form.metaMission || form.knights.some(k => k.name.trim()) },
-    { title: 'Advanced', valid: true },
+    { title: 'Advanced', valid: !form.metaMission || !!form.planner.knightRef.trim() },
     { title: 'Review', valid: true },
   ]
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-roundtable-steel">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Target className="w-5 h-5 text-roundtable-gold" />
-            Create Mission
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+    <Modal onClose={onClose} title="Create Mission" icon={<Target className="w-5 h-5 text-roundtable-gold" />}>
         {/* Step indicators */}
         <div className="flex items-center gap-2 px-6 pt-4">
           {steps.map((s, i) => (
@@ -382,7 +370,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
                   </div>
 
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Planner Knight Reference (optional)</label>
+                    <label className="block text-xs text-gray-400 mb-1">Planner Knight (required for meta-missions)</label>
                     <input
                       value={form.planner.knightRef}
                       onChange={e => updatePlanner('knightRef', e.target.value)}
@@ -495,11 +483,7 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
                 )}
               </div>
 
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                  <p className="text-red-400 text-sm">{error}</p>
-                </div>
-              )}
+              {error && <ErrorBanner>{error}</ErrorBanner>}
             </div>
           )}
         </div>
@@ -533,7 +517,6 @@ export function MissionWizard({ onClose, onCreated }: MissionWizardProps) {
             </button>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

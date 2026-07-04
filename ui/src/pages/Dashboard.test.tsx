@@ -48,30 +48,29 @@ vi.mock('../hooks/useWebSocket', () => ({
   })),
 }))
 
-vi.mock('../lib/auth', () => ({
-  authFetch: vi.fn((url: string) => {
+vi.mock('../lib/api', () => ({
+  apiGet: vi.fn((url: string) => {
     if (url === '/api/chains') {
-      return Promise.resolve({
-        json: () => Promise.resolve([
-          {
-            name: 'test-chain',
-            phase: 'Running',
-            startTime: new Date().toISOString(),
-            steps: [],
-          },
-        ]),
-      })
+      return Promise.resolve([
+        {
+          name: 'test-chain',
+          phase: 'Running',
+          startTime: new Date().toISOString(),
+          steps: [],
+        },
+      ])
     }
     if (url === '/api/fleet') {
-      return Promise.resolve({
-        json: () => Promise.resolve([
-          { name: 'galahad' },
-          { name: 'lancelot' },
-        ]),
-      })
+      return Promise.resolve([
+        { name: 'galahad' },
+        { name: 'lancelot' },
+      ])
     }
-    return Promise.resolve({ json: () => Promise.resolve({}) })
+    return Promise.resolve({})
   }),
+  // fetchWithTimeout (session introspection) goes through apiFetch — report
+  // "unsupported" so cost fan-out resolves without network access
+  apiFetch: vi.fn(() => Promise.resolve({ ok: false, json: () => Promise.resolve({}) })),
 }))
 
 function renderDashboard(props = {}) {

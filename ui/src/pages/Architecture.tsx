@@ -1,16 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Network, Server, Globe, MessageSquare, Shield, Crown, Cpu, RefreshCw, Target } from 'lucide-react'
-import { authFetch } from '../lib/auth'
+import { Network, Server, Globe, MessageSquare, Shield, Crown, Cpu } from 'lucide-react'
+import { apiGet } from '../lib/api'
 import { useFleet } from '../hooks/useFleet'
-
-interface RoundTable {
-  name: string
-  natsPrefix: string
-  activeMissions?: number
-  knightsTotal: number
-  knightsReady: number
-}
+import type { RoundTable } from '../lib/types'
+import { PageHeader, RefreshButton, ErrorBanner, Spinner } from '../components/ui'
 
 interface ComponentNode {
   id: string
@@ -32,29 +26,17 @@ export function ArchitecturePage() {
   const [error, setError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
-    try {
-      setLoading(true)
-      const [rtRes, missionsRes] = await Promise.all([
-        authFetch('/api/roundtables'),
-        authFetch('/api/missions')
-      ])
-      
-      if (rtRes.ok) {
-        const rtData = await rtRes.json()
-        setRoundTables(rtData)
-      }
-      
-      if (missionsRes.ok) {
-        const missionsData = await missionsRes.json()
-        setMissions(missionsData)
-      }
-      
-      setError(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error')
-    } finally {
-      setLoading(false)
-    }
+    setLoading(true)
+    // Tolerate partial failure — render whichever endpoint succeeded
+    const [rt, ms] = await Promise.allSettled([
+      apiGet<RoundTable[]>('/api/roundtables'),
+      apiGet<any[]>('/api/missions'),
+    ])
+    if (rt.status === 'fulfilled') setRoundTables(rt.value)
+    if (ms.status === 'fulfilled') setMissions(ms.value)
+    const failure = [rt, ms].find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+    setError(failure ? (failure.reason instanceof Error ? failure.reason.message : 'Unknown error') : null)
+    setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -132,34 +114,25 @@ export function ArchitecturePage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Network className="w-8 h-8 text-roundtable-gold" />
-          <h1 className="text-3xl font-bold text-white">Architecture</h1>
-        </div>
-        <button
-          onClick={fetchData}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-roundtable-steel/50 hover:bg-roundtable-steel text-gray-300 rounded-lg transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
-      </div>
+      <PageHeader icon={Network} title="Architecture">
+        <RefreshButton onClick={fetchData} loading={isLoading} disabled={isLoading} />
+      </PageHeader>
       <p className="text-gray-400 mb-8 max-w-2xl">
         The Round Table system consists of a Kubernetes operator managing AI agent fleets,
         connected via NATS messaging and observed through this dashboard.
       </p>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
-          <p className="text-red-400 text-sm">Failed to load live data: {error}</p>
+        <div className="mb-6">
+          <ErrorBanner>Failed to load live data: {error}</ErrorBanner>
         </div>
       )}
 
       {isLoading && roundTables.length === 0 && (
         <div className="text-center py-12 mb-8">
-          <div className="animate-spin w-8 h-8 border-2 border-roundtable-gold border-t-transparent rounded-full mx-auto mb-3" />
+          <div className="flex justify-center mb-3">
+            <Spinner />
+          </div>
           <p className="text-gray-500 text-sm">Loading architecture data...</p>
         </div>
       )}
@@ -214,7 +187,7 @@ export function ArchitecturePage() {
       <div className="mt-6 bg-roundtable-slate border border-roundtable-steel rounded-xl p-6">
         <h2 className="text-lg font-bold text-white mb-4">Tech Stack</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div><h4 className="text-gray-400 mb-1">Frontend</h4><p className="text-white">React 18 + TypeScript</p><p className="text-gray-500">Vite, Tailwind CSS</p></div>
+          <div><h4 className="text-gray-400 mb-1">Frontend</h4><p className="text-white">React 19 + TypeScript</p><p className="text-gray-500">Vite, Tailwind CSS</p></div>
           <div><h4 className="text-gray-400 mb-1">API</h4><p className="text-white">Go 1.23</p><p className="text-gray-500">Gorilla Mux, WebSocket</p></div>
           <div><h4 className="text-gray-400 mb-1">Messaging</h4><p className="text-white">NATS + JetStream</p><p className="text-gray-500">Pub/Sub, persistence</p></div>
           <div><h4 className="text-gray-400 mb-1">Orchestration</h4><p className="text-white">Kubernetes CRDs</p><p className="text-gray-500">Custom operator</p></div>

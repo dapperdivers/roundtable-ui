@@ -1,7 +1,8 @@
-import { authFetch } from '../lib/auth'
+import { apiGet, apiGetText } from '../lib/api'
 import { useState, useEffect } from 'react'
-import { BookOpen, Calendar, FileText, ChevronLeft, ChevronRight, Loader2, Clock } from 'lucide-react'
+import { BookOpen, Calendar, FileText, ChevronLeft, ChevronRight, Clock } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import { Spinner, EmptyState, PageHeader } from '../components/ui'
 
 // Helper to format date in human-friendly format
 function formatDate(dateStr: string): string {
@@ -52,8 +53,7 @@ export function BriefingsPage() {
   const [contentError, setContentError] = useState(false)
 
   useEffect(() => {
-    authFetch('/api/briefings')
-      .then((r) => r.json())
+    apiGet<string[]>('/api/briefings')
       .then((data) => {
         // Sort newest first
         const sorted = data.sort().reverse()
@@ -75,14 +75,7 @@ export function BriefingsPage() {
       setContent('')
       
       const date = selected.replace('.md', '')
-      // FIX: Use authFetch instead of plain fetch
-      authFetch(`/api/briefings/${date}`)
-        .then((r) => {
-          if (!r.ok) {
-            throw new Error('Not found')
-          }
-          return r.text()
-        })
+      apiGetText(`/api/briefings/${date}`)
         .then((text) => {
           setContent(text)
           setContentLoading(false)
@@ -108,10 +101,7 @@ export function BriefingsPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold text-white flex items-center gap-3 mb-8">
-        <BookOpen className="w-8 h-8 text-roundtable-gold" />
-        Chronicles
-      </h1>
+      <PageHeader icon={BookOpen} title="Chronicles" />
 
       <div className="flex gap-6">
         {/* Archive sidebar */}
@@ -144,19 +134,17 @@ export function BriefingsPage() {
         <div className="flex-1">
           {/* Empty state when no briefings exist */}
           {!loading && briefings.length === 0 ? (
-            <div className="text-center py-20">
-              <BookOpen className="w-16 h-16 mx-auto mb-4 text-gray-600" />
-              <p className="text-gray-400 text-lg mb-2">No briefings yet</p>
-              <p className="text-gray-500 text-sm max-w-md mx-auto">
-                Configure a morning chain to generate daily briefings.
-              </p>
-            </div>
+            <EmptyState
+              icon={BookOpen}
+              title="No briefings yet"
+              sub="Configure a morning chain to generate daily briefings."
+            />
           ) : !selected ? (
-            <div className="text-center py-20 text-gray-500">
-              <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-30" />
-              <p>Select a chronicle from the archive</p>
-              <p className="text-xs mt-2">{briefings.length} briefings available</p>
-            </div>
+            <EmptyState
+              icon={BookOpen}
+              title="Select a chronicle from the archive"
+              sub={`${briefings.length} briefings available`}
+            />
           ) : (
             <div>
               {/* Date navigation */}
@@ -203,14 +191,14 @@ export function BriefingsPage() {
               <div className="bg-roundtable-slate border border-roundtable-steel rounded-xl p-6 min-h-[400px]">
                 {contentLoading ? (
                   <div className="flex items-center justify-center py-20">
-                    <Loader2 className="w-8 h-8 text-roundtable-gold animate-spin" />
+                    <Spinner />
                   </div>
                 ) : contentError ? (
-                  <div className="text-center py-20 text-gray-500">
-                    <FileText className="w-12 h-12 mx-auto mb-4 opacity-30" />
-                    <p>No briefing available for this date</p>
-                    <p className="text-xs mt-2">Try selecting another date from the archive</p>
-                  </div>
+                  <EmptyState
+                    icon={FileText}
+                    title="No briefing available for this date"
+                    sub="Try selecting another date from the archive"
+                  />
                 ) : (
                   <div className="prose prose-invert prose-sm max-w-none 
                     prose-headings:text-white prose-headings:font-semibold
