@@ -246,9 +246,27 @@ func main() {
 	fleetPrefix := envOr("FLEET_PREFIX", "fleet-a")       // NATS subject prefix (#23)
 	fleetStream := envOr("FLEET_STREAM", "fleet_a_results") // JetStream stream name
 
-	// Connect to NATS
+	// Connect to NATS. Reconnect forever: NATS can restart underneath a
+	// long-lived dashboard pod, and the nats.go defaults (MaxReconnects=60)
+	// give up after ~2min and permanently close the connection — every WS
+	// then flaps "connected/disconnected" and introspect calls fail with
+	// "nats: connection closed" until the pod is manually restarted.
 	var err error
-	nc, err = nats.Connect(natsURL)
+	nc, err = nats.Connect(natsURL,
+		nats.MaxReconnects(-1), // never give up
+		nats.ReconnectWait(2*time.Second),
+		nats.ReconnectJitter(500*time.Millisecond, 2*time.Second),
+		nats.RetryOnFailedConnect(true), // don't hard-exit if NATS is briefly down at boot
+		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
+			slog.Warn("NATS disconnected, will retry", "error", err)
+		}),
+		nats.ReconnectHandler(func(c *nats.Conn) {
+			slog.Info("NATS reconnected", "url", c.ConnectedUrl())
+		}),
+		nats.ClosedHandler(func(_ *nats.Conn) {
+			slog.Error("NATS connection permanently closed")
+		}),
+	)
 	if err != nil {
 		slog.Error("NATS connect failed", "error", err, "url", natsURL)
 		os.Exit(1)
@@ -1008,6 +1026,17 @@ func briefingHandler(vaultPath string) http.HandlerFunc {
 
 func wsHandler(fleetPrefix string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Check NATS health BEFORE upgrading (#19). Upgrading first and then
+		// closing makes the client fire onopen (UI shows "Connected") before
+		// the close arrives, so the indicator flickers connected/disconnected
+		// on every reconnect. Rejecting the upgrade with 503 keeps the client
+		// cleanly "Disconnected" while the backend is degraded.
+		if !nc.IsConnected() {
+			slog.Warn("NATS not connected, rejecting WS")
+			http.Error(w, "NATS unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			slog.Error("WebSocket upgrade error", "error", err)
@@ -1032,14 +1061,7 @@ func wsHandler(fleetPrefix string) http.HandlerFunc {
 		// Done channel to clean up NATS subscriptions when WS closes
 		done := make(chan struct{})
 
-		// Subscribe to all task and result events (#19: check NATS connection health)
-		if !nc.IsConnected() {
-			slog.Warn("NATS not connected, rejecting WS")
-			conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "NATS unavailable"))
-			conn.Close()
-			return
-		}
-
+		// Subscribe to all task and result events
 		taskSub, err := nc.Subscribe(fleetPrefix+".tasks.>", func(msg *nats.Msg) {
 			select {
 			case <-done:

@@ -66,6 +66,12 @@ function useWebSocketConnection() {
     ws.onclose = (e) => {
       if (!mountedRef.current) return
       setConnected(false)
+      // Surface the close reason for diagnosis. The API returns a 503 on the
+      // upgrade when its NATS connection is down (browsers report that as a
+      // reasonless code-1006 close), and a clean shutdown sends 1011 with a
+      // reason — either way, don't silently show a bare "Disconnected".
+      const reason = e.reason || (e.code === 1006 ? 'live feed unreachable (backend may be starting or NATS is down)' : `closed (code ${e.code})`)
+      setError(reason)
 
       // Exponential backoff reconnect with jitter (#37)
       const delay = jitter(reconnectDelay.current)
