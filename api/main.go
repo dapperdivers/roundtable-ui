@@ -703,24 +703,34 @@ func knightLogsHandler(namespace string) http.HandlerFunc {
 	}
 }
 
-// deriveIntrospectPrefix queries the Knight CRD to extract the NATS prefix for introspection.
-// This allows the dashboard to support multiple tables (fleet-a, chelonian, etc.) without hardcoding.
-func deriveIntrospectPrefix(ctx context.Context, knightName string) (string, error) {
+// getKnightCR fetches the Knight CR by name. The session handler uses it for
+// both readiness (status.ready/phase) and NATS prefix derivation with a single
+// API call.
+func getKnightCR(ctx context.Context, knightName string) (*unstructured.Unstructured, error) {
 	if dynClient == nil {
-		return "", fmt.Errorf("kubernetes client not available")
-	}
-
-	// Query the Knight CRD
-	gvr := schema.GroupVersionResource{
-		Group:    "ai.roundtable.io",
-		Version:  "v1alpha1",
-		Resource: "knights",
+		return nil, fmt.Errorf("kubernetes client not available")
 	}
 	namespace := envOr("NAMESPACE", "roundtable")
-	obj, err := dynClient.Resource(gvr).Namespace(namespace).Get(ctx, knightName, metav1.GetOptions{})
+	obj, err := dynClient.Resource(knightGVR).Namespace(namespace).Get(ctx, knightName, metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("failed to get knight %s: %w", knightName, err)
+		return nil, fmt.Errorf("failed to get knight %s: %w", knightName, err)
 	}
+	return obj, nil
+}
+
+// knightIsReady reports whether the operator marked the Knight as ready to
+// accept tasks (status.ready, mirrored by status.phase=Ready). The operator
+// derives this from deployment/pod readiness, so it doubles as a cheap
+// reachability signal for introspect requests.
+func knightIsReady(obj *unstructured.Unstructured) bool {
+	status := getNestedMap(obj.Object, "status")
+	return getBool(status, "ready") || getStr(status, "phase") == "Ready"
+}
+
+// deriveIntrospectPrefix extracts the NATS prefix for introspection from a Knight CR.
+// This allows the dashboard to support multiple tables (fleet-a, chelonian, etc.) without hardcoding.
+func deriveIntrospectPrefix(obj *unstructured.Unstructured) (string, error) {
+	knightName := obj.GetName()
 
 	// Extract .spec.nats.subjects[]
 	subjects, found, err := unstructured.NestedStringSlice(obj.Object, "spec", "nats", "subjects")
@@ -762,25 +772,42 @@ func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 			return
 		}
 
-		if nc == nil {
-			http.Error(w, "NATS not available", http.StatusServiceUnavailable)
-			return
-		}
-
 		// Validate knight name (prevents NATS subject injection)
 		if !validKnightName.MatchString(name) {
 			http.Error(w, "Invalid knight name", http.StatusBadRequest)
 			return
 		}
 
-		// Derive the NATS prefix from the Knight CRD so non-fleet-a knights
-		// (e.g. chelonian, rt-dev) are queried on their own table's subject
-		// instead of the hardcoded FLEET_PREFIX.
+		// Fetch the Knight CR once — it supplies both the readiness signal and
+		// the NATS prefix, so non-fleet-a knights (e.g. chelonian, rt-dev) are
+		// queried on their own table's subject instead of the hardcoded
+		// FLEET_PREFIX.
 		ctx := r.Context()
-		prefix, err := deriveIntrospectPrefix(ctx, name)
-		if err != nil {
-			slog.Warn("Failed to derive introspect prefix, falling back to FLEET_PREFIX", "knight", name, "error", err)
-			prefix = fleetPrefix // graceful degradation
+		prefix := fleetPrefix // graceful degradation when the CR is unavailable
+		if knightCR, err := getKnightCR(ctx, name); err != nil {
+			slog.Warn("Failed to fetch Knight CR, falling back to FLEET_PREFIX", "knight", name, "error", err)
+		} else {
+			// Short-circuit offline knights: proxying introspect to a knight
+			// whose pod is not ready just blocks until the NATS request timeout
+			// and surfaces as a 504 on the dashboard. Return the frontend's
+			// "no data" shape ({}) immediately instead — every caller guards on
+			// .session / .runtime / .entries / .nodes being present.
+			if !knightIsReady(knightCR) {
+				slog.Debug("Knight not ready, skipping introspect", "knight", name)
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte("{}"))
+				return
+			}
+			if p, perr := deriveIntrospectPrefix(knightCR); perr == nil {
+				prefix = p
+			} else {
+				slog.Warn("Failed to derive introspect prefix, falling back to FLEET_PREFIX", "knight", name, "error", perr)
+			}
+		}
+
+		if nc == nil {
+			http.Error(w, "NATS not available", http.StatusServiceUnavailable)
+			return
 		}
 
 		// Forward a validated entry limit (pi-knight defaults to 20 for type=recent)
