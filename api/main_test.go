@@ -1854,3 +1854,104 @@ func TestHealthEndpointBypassesAuth(t *testing.T) {
 		t.Errorf("expected status=ok, got %s", response["status"])
 	}
 }
+
+// TestKnightSessionHandlerOfflineShortCircuit verifies that session/introspect
+// requests for knights that are not Ready return a fast empty 200 ({}) instead
+// of proxying to NATS and hanging until a 504 gateway timeout.
+func TestKnightSessionHandlerOfflineShortCircuit(t *testing.T) {
+	router := setupTestRouter()
+	nc = nil // NATS unavailable — the short-circuit must fire before any NATS use
+	t.Setenv("NAMESPACE", "test-namespace")
+	namespace := "test-namespace"
+
+	offline := makeTestKnightCR("lancelot", namespace, "infrastructure")
+	offline.Object["status"] = map[string]interface{}{"phase": "Provisioning"}
+	if _, err := dynClient.Resource(knightGVR).Namespace(namespace).Create(nil, offline, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Failed to create knight CR: %v", err)
+	}
+
+	degraded := makeTestKnightCR("percival", namespace, "research")
+	degraded.Object["status"] = map[string]interface{}{"phase": "Degraded", "ready": false}
+	if _, err := dynClient.Resource(knightGVR).Namespace(namespace).Create(nil, degraded, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Failed to create knight CR: %v", err)
+	}
+
+	for _, tt := range []struct {
+		knight      string
+		sessionType string
+	}{
+		{"lancelot", "stats"},
+		{"lancelot", "recent"},
+		{"lancelot", "tree"},
+		{"percival", "stats"},
+	} {
+		t.Run(tt.knight+"/"+tt.sessionType, func(t *testing.T) {
+			req := httptest.NewRequest("GET", fmt.Sprintf("/api/fleet/%s/session?type=%s", tt.knight, tt.sessionType), nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200 for offline knight, got %d", w.Code)
+			}
+			if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+				t.Errorf("expected Content-Type application/json, got %s", ct)
+			}
+			var body map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("expected valid JSON body, got %q: %v", w.Body.String(), err)
+			}
+			if len(body) != 0 {
+				t.Errorf("expected empty JSON object, got %v", body)
+			}
+		})
+	}
+}
+
+// TestKnightSessionHandlerReadyKnightProceedsToNATS verifies that Ready knights
+// are NOT short-circuited — the request proceeds to the NATS introspect proxy
+// (which reports 503 here because the test has no NATS connection).
+func TestKnightSessionHandlerReadyKnightProceedsToNATS(t *testing.T) {
+	router := setupTestRouter()
+	nc = nil
+	t.Setenv("NAMESPACE", "test-namespace")
+	namespace := "test-namespace"
+
+	// makeTestKnightCR sets status.phase=Ready
+	if _, err := dynClient.Resource(knightGVR).Namespace(namespace).Create(nil, makeTestKnightCR("galahad", namespace, "security"), metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Failed to create knight CR: %v", err)
+	}
+
+	// Readiness via status.ready=true (phase absent) must also pass through
+	readyBool := makeTestKnightCR("gawain", namespace, "docs")
+	readyBool.Object["status"] = map[string]interface{}{"ready": true}
+	if _, err := dynClient.Resource(knightGVR).Namespace(namespace).Create(nil, readyBool, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("Failed to create knight CR: %v", err)
+	}
+
+	for _, knight := range []string{"galahad", "gawain"} {
+		req := httptest.NewRequest("GET", "/api/fleet/"+knight+"/session?type=stats", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("expected ready knight %s to reach the NATS proxy (503 with nil NATS), got %d", knight, w.Code)
+		}
+	}
+}
+
+// TestKnightSessionHandlerMissingCRFallsBack verifies graceful degradation:
+// when the Knight CR cannot be fetched the handler keeps the old proxy path
+// (FLEET_PREFIX fallback) instead of short-circuiting.
+func TestKnightSessionHandlerMissingCRFallsBack(t *testing.T) {
+	router := setupTestRouter()
+	nc = nil
+	t.Setenv("NAMESPACE", "test-namespace")
+
+	req := httptest.NewRequest("GET", "/api/fleet/unknown-knight/session?type=stats", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected fallback to NATS proxy (503 with nil NATS), got %d", w.Code)
+	}
+}
