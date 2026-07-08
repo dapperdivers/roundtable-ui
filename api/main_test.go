@@ -1907,6 +1907,35 @@ func TestKnightSessionHandlerOfflineShortCircuit(t *testing.T) {
 	}
 }
 
+// TestKnightSessionTypeValidation covers the session-type whitelist and the
+// type=session id validation (both fail fast before any NATS/CR work).
+func TestKnightSessionTypeValidation(t *testing.T) {
+	router := setupTestRouter()
+	nc = nil
+
+	tests := []struct {
+		name           string
+		query          string
+		expectedStatus int
+	}{
+		{"unknown type rejected", "type=bogus", http.StatusBadRequest},
+		{"history is allowed", "type=history", http.StatusServiceUnavailable}, // passes validation, fails at nc==nil
+		{"session without id", "type=session", http.StatusBadRequest},
+		{"session with path traversal id", "type=session&id=../etc/passwd", http.StatusBadRequest},
+		{"session with valid uuid id", "type=session&id=019f4162-77c7-7cf6-97b3-114d47bd250b", http.StatusServiceUnavailable},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/fleet/galahad/session?"+tt.query, nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			if w.Code != tt.expectedStatus {
+				t.Errorf("expected %d, got %d (body: %s)", tt.expectedStatus, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 // TestKnightSessionHandlerReadyKnightProceedsToNATS verifies that Ready knights
 // are NOT short-circuited — the request proceeds to the NATS introspect proxy
 // (which reports 503 here because the test has no NATS connection).
