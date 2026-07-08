@@ -35,6 +35,16 @@ export interface SessionEntry {
   tokens?: { input: number; output: number }
 }
 
+// One past (persisted) session in a knight's history list (introspect type=history).
+export interface SessionHistoryItem {
+  id: string
+  startedAt: string | null
+  entryCount: number
+  messageCount: number
+  firstPrompt: string
+  sizeBytes: number | null
+}
+
 export interface SessionTreeNode {
   id: string
   parentId: string | null

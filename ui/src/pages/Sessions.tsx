@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { TreePine, ChevronRight, ChevronDown, Wrench, MessageSquare, Search, BarChart3 } from 'lucide-react'
+import { TreePine, ChevronRight, ChevronDown, Wrench, MessageSquare, Search, BarChart3, History } from 'lucide-react'
 import { getKnightConfig, buildKnightConfigFromFleet } from '../lib/knights'
 import { useFleet } from '../hooks/useFleet'
 import { fetchWithTimeout } from '../hooks/useKnightSession'
-import type { SessionEntry, SessionTreeNode, KnightSessionStats } from '../hooks/useKnightSession'
+import type { SessionEntry, SessionTreeNode, SessionHistoryItem, KnightSessionStats } from '../hooks/useKnightSession'
 import { Spinner, ErrorBanner, EmptyState, PageHeader, RefreshButton, StatCard, ProgressBar } from '../components/ui'
 import { formatCost, formatTimestamp } from '../lib/format'
 
@@ -29,6 +29,13 @@ const entryTypeColors: Record<string, string> = {
 // march the content off the right edge (and squeeze the timestamp into a wrap).
 const MAX_TREE_INDENT_DEPTH = 12
 const TREE_INDENT_PX = 16
+
+// Human label for a past session in the picker: when it ran, message count, and the opening prompt.
+function sessionLabel(s: SessionHistoryItem): string {
+  const when = s.startedAt ? new Date(s.startedAt).toLocaleString() : 'unknown time'
+  const prompt = s.firstPrompt ? ` — ${s.firstPrompt.slice(0, 60)}` : ''
+  return `${when} · ${s.messageCount} msgs${prompt}`
+}
 
 export function TreeNodeView({ node, depth = 0 }: { node: SessionTreeNode & { children?: SessionTreeNode[] }; depth?: number }) {
   const [expanded, setExpanded] = useState(depth < 2)
@@ -161,6 +168,11 @@ export function SessionsPage() {
   const [stats, setStats] = useState<KnightSessionStats | null>(null)
   const [allKnightStats, setAllKnightStats] = useState<Record<string, KnightSessionStats>>({})
   const [showFleetPerf, setShowFleetPerf] = useState(false)
+  // Session history / replay: 'live' = the active in-memory session; otherwise a past session id.
+  const [sessions, setSessions] = useState<SessionHistoryItem[]>([])
+  const [selectedSession, setSelectedSession] = useState('live')
+  const [archivedMeta, setArchivedMeta] = useState<{ total: number; hasMore: boolean; startedAt: string | null } | null>(null)
+  const isArchived = selectedSession !== 'live'
 
   // Build dynamic knight config from fleet
   const knightConfig = useMemo(() => buildKnightConfigFromFleet(knights), [knights])
@@ -184,26 +196,54 @@ export function SessionsPage() {
     )
   }, [knights, knightSearchQuery])
 
+  // Load the knight's past-session list; reset to the live view on knight change.
+  useEffect(() => {
+    if (!selectedKnight) return
+    setSelectedSession('live')
+    setArchivedMeta(null)
+    fetchWithTimeout(`/api/fleet/${selectedKnight}/session?type=history`)
+      .then(r => (r && r.ok ? r.json() : null))
+      .then(d => setSessions(d?.sessions || []))
+      .catch(() => setSessions([]))
+  }, [selectedKnight])
+
   const fetchData = useCallback(async () => {
     if (!selectedKnight) return
-    
+
     setLoading(true)
     setError(null)
-    
+
     try {
-      // Always fetch stats (independent request with its own timeout)
-      fetchWithTimeout(`/api/fleet/${selectedKnight}/session?type=stats`)
-        .then(r => r && r.ok ? r.json() : null)
-        .then(d => {
-          if (d) {
-            setStats({ ...d, supported: true })
-          } else {
+      // Stats reflect the live session only.
+      if (!isArchived) {
+        fetchWithTimeout(`/api/fleet/${selectedKnight}/session?type=stats`)
+          .then(r => r && r.ok ? r.json() : null)
+          .then(d => {
+            if (d) {
+              setStats({ ...d, supported: true })
+            } else {
+              setStats({ knight: selectedKnight, supported: false, session: null, runtime: { uptime: 0, activeTasks: 0, model: '' } })
+            }
+          })
+          .catch(() => {
             setStats({ knight: selectedKnight, supported: false, session: null, runtime: { uptime: 0, activeTasks: 0, model: '' } })
-          }
-        })
-        .catch(() => {
-          setStats({ knight: selectedKnight, supported: false, session: null, runtime: { uptime: 0, activeTasks: 0, model: '' } })
-        })
+          })
+      }
+
+      // Archived session: replay its persisted entries (timeline/tools views).
+      if (isArchived) {
+        const res = await fetchWithTimeout(`/api/fleet/${selectedKnight}/session?type=session&id=${encodeURIComponent(selectedSession)}&limit=300`)
+        if (!res || !res.ok) {
+          setEntries([])
+          setArchivedMeta(null)
+          return
+        }
+        const data = await res.json()
+        setEntries(data.entries || [])
+        setTreeNodes([])
+        setArchivedMeta({ total: data.total ?? 0, hasMore: !!data.hasMore, startedAt: data.startedAt ?? null })
+        return
+      }
 
       if (view === 'tree') {
         const res = await fetchWithTimeout(`/api/fleet/${selectedKnight}/session?type=tree`)
@@ -227,7 +267,7 @@ export function SessionsPage() {
     } finally {
       setLoading(false)
     }
-  }, [selectedKnight, view])
+  }, [selectedKnight, view, selectedSession, isArchived])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -374,8 +414,45 @@ export function SessionsPage() {
         )}
       </div>
 
-      {/* Knight stats bar */}
-      {stats?.supported === false && (
+      {/* Session picker: live vs. a past (persisted) session */}
+      {sessions.length > 0 && (
+        <div className="flex items-center gap-3 mb-4 text-sm">
+          <span className="text-gray-500 flex items-center gap-1.5"><History className="w-4 h-4" /> Session</span>
+          <select
+            value={selectedSession}
+            onChange={e => setSelectedSession(e.target.value)}
+            className="bg-roundtable-navy border border-roundtable-steel rounded-lg px-3 py-2 text-white max-w-xl flex-1">
+            <option value="live">🟢 Live (active session)</option>
+            {sessions.map(s => (
+              <option key={s.id} value={s.id}>{sessionLabel(s)}</option>
+            ))}
+          </select>
+          {isArchived && (
+            <span className="text-xs px-2 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 whitespace-nowrap">
+              📼 Archived
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Archived session banner (replaces live stats when replaying history) */}
+      {isArchived && (
+        <div className="bg-roundtable-slate border border-roundtable-steel rounded-lg p-3 mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+          <span className="text-gray-300 font-medium">📼 Replaying archived session</span>
+          {archivedMeta?.startedAt && (
+            <span className="text-gray-500">Started {new Date(archivedMeta.startedAt).toLocaleString()}</span>
+          )}
+          {archivedMeta && (
+            <span className="text-gray-500">{archivedMeta.total.toLocaleString()} entries{archivedMeta.hasMore ? ' (showing first 300)' : ''}</span>
+          )}
+          <button onClick={() => setSelectedSession('live')} className="text-roundtable-gold hover:underline ml-auto">
+            ← Back to live
+          </button>
+        </div>
+      )}
+
+      {/* Knight stats bar (live session only) */}
+      {!isArchived && stats?.supported === false && (
         <div className="bg-amber-900/20 border border-amber-500/30 rounded-lg p-4 mb-4">
           <p className="text-amber-400 text-sm flex items-center gap-2">
             ℹ️ This knight does not support session introspection. Basic fleet info shown instead.
@@ -389,7 +466,7 @@ export function SessionsPage() {
           )}
         </div>
       )}
-      {stats?.session && stats.supported !== false && (
+      {!isArchived && stats?.session && stats.supported !== false && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
           <StatCard label="Messages" value={stats.session.totalMessages} />
           <StatCard label="Tool Calls" value={stats.session.toolCalls} color="text-purple-400" />
@@ -465,9 +542,11 @@ export function SessionsPage() {
           {tree.length === 0 ? (
             <EmptyState
               icon={TreePine}
-              title={stats?.supported === false
-                ? 'Session introspection not available for this knight.'
-                : 'No session tree data. Dispatch a task to see activity.'}
+              title={isArchived
+                ? 'Tree view is available for the live session. Use Timeline or Tools to replay this archived session.'
+                : stats?.supported === false
+                  ? 'Session introspection not available for this knight.'
+                  : 'No session tree data. Dispatch a task to see activity.'}
             />
           ) : (
             <div className="max-h-[70vh] overflow-auto">
@@ -485,11 +564,13 @@ export function SessionsPage() {
           {filteredEntries.length === 0 && (
             <EmptyState
               icon={MessageSquare}
-              title={stats?.supported === false
+              title={!isArchived && stats?.supported === false
                 ? 'Session introspection not available for this knight.'
                 : searchQuery || filterType
                   ? 'No entries match your filters.'
-                  : 'No session entries found. Dispatch a task to see activity.'}
+                  : isArchived
+                    ? 'This archived session has no entries.'
+                    : 'No session entries found. Dispatch a task to see activity.'}
             />
           )}
           {filteredEntries.map(entry => (

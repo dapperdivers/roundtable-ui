@@ -130,7 +130,12 @@ func eventTimestamp(data []byte) time.Time {
 var validK8sName = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // validSessionTypes is the whitelist of allowed session type query parameters.
-var validSessionTypes = map[string]bool{"stats": true, "recent": true, "tree": true}
+var validSessionTypes = map[string]bool{"stats": true, "recent": true, "tree": true, "history": true, "session": true}
+
+// validSessionID guards the id forwarded for type=session — the knight resolves
+// it to a JSONL filename, so restrict it to the uuid charset (defense in depth;
+// the knight validates too).
+var validSessionID = regexp.MustCompile(`^[0-9a-fA-F-]{1,64}$`)
 
 // authMiddleware checks the DASHBOARD_API_KEY env var for API-key based auth (#68, #65)
 func authMiddleware(next http.Handler) http.Handler {
@@ -786,7 +791,15 @@ func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 			reqType = "stats"
 		}
 		if !validSessionTypes[reqType] {
-			http.Error(w, "Invalid session type (allowed: stats, recent, tree)", http.StatusBadRequest)
+			http.Error(w, "Invalid session type (allowed: stats, recent, tree, history, session)", http.StatusBadRequest)
+			return
+		}
+
+		// type=session requires a valid id (which JSONL file to read). Validate up
+		// front so a bad id fails fast regardless of knight readiness.
+		sessionID := r.URL.Query().Get("id")
+		if reqType == "session" && !validSessionID.MatchString(sessionID) {
+			http.Error(w, "Invalid or missing session id", http.StatusBadRequest)
 			return
 		}
 
@@ -835,12 +848,28 @@ func knightSessionHandler(fleetPrefix string) http.HandlerFunc {
 				introspectReq["limit"] = lim
 			}
 		}
+		// type=session takes the (already-validated) id and an optional page offset.
+		if reqType == "session" {
+			introspectReq["id"] = sessionID
+			if offStr := r.URL.Query().Get("offset"); offStr != "" {
+				if off, offErr := strconv.Atoi(offStr); offErr == nil && off >= 0 {
+					introspectReq["offset"] = off
+				}
+			}
+		}
 		payload, _ := json.Marshal(introspectReq)
+
+		// history/session read JSONL off the knight's PVC — give them more headroom
+		// than the in-memory stats/recent/tree queries.
+		timeout := 5 * time.Second
+		if reqType == "history" || reqType == "session" {
+			timeout = 12 * time.Second
+		}
 
 		// Knight names in NATS are capitalized (e.g., "Galahad")
 		capitalName := capitalizeKnight(name)
 		subject := fmt.Sprintf("%s.introspect.%s", prefix, capitalName)
-		msg, err := nc.Request(subject, payload, 5*time.Second)
+		msg, err := nc.Request(subject, payload, timeout)
 		if err != nil {
 			slog.Warn("Knight introspect timeout", "knight", name, "subject", subject, "error", err)
 			http.Error(w, "Knight introspection timeout", http.StatusGatewayTimeout)
