@@ -25,25 +25,37 @@ const entryTypeColors: Record<string, string> = {
   compaction: 'border-red-500/30 bg-red-500/5',
 }
 
-function TreeNodeView({ node, depth = 0 }: { node: SessionTreeNode & { children?: SessionTreeNode[] }; depth?: number }) {
+// Cap the visual indent so a long, near-linear parent→child chain doesn't
+// march the content off the right edge (and squeeze the timestamp into a wrap).
+const MAX_TREE_INDENT_DEPTH = 12
+const TREE_INDENT_PX = 16
+
+export function TreeNodeView({ node, depth = 0 }: { node: SessionTreeNode & { children?: SessionTreeNode[] }; depth?: number }) {
   const [expanded, setExpanded] = useState(depth < 2)
   const hasChildren = (node.children?.length ?? 0) > 0
+  const indent = Math.min(depth, MAX_TREE_INDENT_DEPTH) * TREE_INDENT_PX
 
   return (
-    <div style={{ marginLeft: depth * 16 }}>
+    <div>
       <div
-        className="flex items-center gap-2 py-1 px-2 rounded hover:bg-roundtable-steel/30 cursor-pointer text-sm"
+        className="flex items-center gap-2 py-1 pr-2 rounded hover:bg-roundtable-steel/30 cursor-pointer text-sm"
         onClick={() => setExpanded(e => !e)}
       >
-        {hasChildren ? (
-          expanded ? <ChevronDown className="w-3 h-3 text-gray-500" /> : <ChevronRight className="w-3 h-3 text-gray-500" />
-        ) : <span className="w-3" />}
-        <span>{entryTypeIcons[node.type] || '●'}</span>
-        <span className="text-gray-300 truncate flex-1">{node.summary || node.label || node.type}</span>
+        {/* Indented label region — only this shrinks/truncates, keeping the
+            timestamp pinned to a fixed right column. */}
+        <div className="flex items-center gap-2 min-w-0 flex-1" style={{ paddingLeft: indent }}>
+          {hasChildren ? (
+            expanded
+              ? <ChevronDown className="w-3 h-3 text-gray-500 shrink-0" />
+              : <ChevronRight className="w-3 h-3 text-gray-500 shrink-0" />
+          ) : <span className="w-3 shrink-0" />}
+          <span className="shrink-0">{entryTypeIcons[node.type] || '●'}</span>
+          <span className="text-gray-300 truncate">{node.summary || node.label || node.type}</span>
+        </div>
         {node.childrenCount > 0 && (
-          <span className="text-xs text-gray-600">{node.childrenCount}</span>
+          <span className="text-xs text-gray-600 shrink-0">{node.childrenCount}</span>
         )}
-        <span className="text-xs text-gray-600">{formatTimestamp(node.timestamp)}</span>
+        <span className="text-xs text-gray-600 shrink-0 whitespace-nowrap tabular-nums">{formatTimestamp(node.timestamp)}</span>
       </div>
       {expanded && hasChildren && (
         <div>
@@ -56,27 +68,61 @@ function TreeNodeView({ node, depth = 0 }: { node: SessionTreeNode & { children?
   )
 }
 
-function ToolCallCard({ entry }: { entry: SessionEntry }) {
+// Message entries carry a `role` but a shared `type` of "message"; resolve a
+// legible icon/color/label from the role so they don't all render as "message".
+function roleIcon(role?: string): string {
+  return role === 'user' ? '📨' : role === 'assistant' ? '🤖' : '💬'
+}
+
+function entryIcon(entry: SessionEntry): string {
+  if (entry.type === 'message') return roleIcon(entry.role)
+  return entryTypeIcons[entry.type] || '●'
+}
+
+function entryColor(entry: SessionEntry): string {
+  if (entry.type === 'message') {
+    return entry.role === 'user' ? entryTypeColors.user
+      : entry.role === 'assistant' ? entryTypeColors.assistant
+      : 'border-gray-500/30 bg-gray-500/5'
+  }
+  return entryTypeColors[entry.type] || 'border-gray-500/30 bg-gray-500/5'
+}
+
+// Never collapse to the bare wire type ("message"); prefer real text, then a
+// role/tool descriptor. Returns whether the label is a placeholder so the UI
+// can render it muted.
+function entryLabel(entry: SessionEntry): { text: string; placeholder: boolean } {
+  const text = entry.text?.trim()
+  if (text) return { text, placeholder: false }
+  if (entry.type === 'message' && entry.role) {
+    return { text: `${entry.role} message`, placeholder: true }
+  }
+  if (entry.toolName) return { text: entry.toolName, placeholder: false }
+  return { text: entry.type, placeholder: true }
+}
+
+export function ToolCallCard({ entry }: { entry: SessionEntry }) {
   const [expanded, setExpanded] = useState(false)
+  const label = entryLabel(entry)
 
   return (
     <div
-      className={`border rounded-lg p-3 cursor-pointer transition-colors ${entryTypeColors[entry.type] || 'border-gray-500/30 bg-gray-500/5'}`}
+      className={`border rounded-lg p-3 cursor-pointer transition-colors ${entryColor(entry)}`}
       onClick={() => setExpanded(e => !e)}
     >
       <div className="flex items-center gap-2 text-sm">
-        <span>{entryTypeIcons[entry.type] || '●'}</span>
+        <span className="shrink-0">{entryIcon(entry)}</span>
         {entry.toolName && (
-          <span className="font-mono text-purple-400 text-xs bg-purple-500/10 px-1.5 py-0.5 rounded">{entry.toolName}</span>
+          <span className="font-mono text-purple-400 text-xs bg-purple-500/10 px-1.5 py-0.5 rounded shrink-0">{entry.toolName}</span>
         )}
-        <span className="text-gray-400 truncate flex-1">{entry.text || entry.toolName || entry.type}</span>
+        <span className={`truncate flex-1 min-w-0 ${label.placeholder ? 'text-gray-500 italic' : 'text-gray-400'}`}>{label.text}</span>
         {entry.cost != null && entry.cost > 0 && (
-          <span className="text-roundtable-gold text-xs">{formatCost(entry.cost)}</span>
+          <span className="text-roundtable-gold text-xs shrink-0">{formatCost(entry.cost)}</span>
         )}
         {entry.tokens && (
-          <span className="text-gray-600 text-xs">{entry.tokens.input + entry.tokens.output}t</span>
+          <span className="text-gray-600 text-xs shrink-0">{entry.tokens.input + entry.tokens.output}t</span>
         )}
-        <span className="text-gray-600 text-xs">{formatTimestamp(entry.timestamp)}</span>
+        <span className="text-gray-600 text-xs shrink-0 whitespace-nowrap tabular-nums">{formatTimestamp(entry.timestamp)}</span>
       </div>
       {expanded && (
         <div className="mt-2 space-y-2 border-t border-roundtable-steel/30 pt-2">
